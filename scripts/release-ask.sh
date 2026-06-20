@@ -29,7 +29,10 @@ echo "▸ building ask-enabled binary ($(basename "$(dirname "$(dirname "$DEV")"
 DEVELOPER_DIR="$DEV" swift build -c release -Xswiftc -DMACVIS_ASK_IMAGE -Xlinker -s
 
 BIN=.build/release/macvis
-TARBALL="macvis-${TAG}-macos-arm64-ask27.tar.gz"
+# The canonical release binary: this ask-enabled build runs on macOS 26+ (ask just returns
+# needs_macos_27 there) and enables ask on macOS 27, so it's a strict superset of the core
+# build. It overwrites (--clobber) the CI-built core asset under the same canonical name.
+TARBALL="macvis-${TAG}-macos-arm64.tar.gz"
 mkdir -p dist
 tar -C "$(dirname "$BIN")" -czf "dist/${TARBALL}" "$(basename "$BIN")"
 ( cd dist && shasum -a 256 "${TARBALL}" | tee "${TARBALL}.sha256" )

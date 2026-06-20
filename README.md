@@ -38,27 +38,44 @@ ship with the OS. Building the `ask` (multimodal) path additionally needs the ma
 
 ## Install
 
-**From source** (needs a Swift 6.2+ toolchain — Xcode 26):
+Apple Silicon, macOS 26+.
+
+**Homebrew**
 
 ```bash
-swift build -c release
-cp .build/release/macvis /usr/local/bin/    # or symlink it onto any directory on your $PATH
-macvis doctor                                # verify what runs on this machine
+brew install junmo-kim/tap/macvis
 ```
 
-**From a release** (no toolchain): download the latest `macvis-<version>-macos-arm64.tar.gz`
-from the project's **Releases**, then:
+**mise**
 
 ```bash
-shasum -a 256 -c macvis-*-macos-arm64.tar.gz.sha256   # verify the download (recommended)
+mise use -g github:junmo-kim/mac-local-vision      # add @0.1.0 to pin a version
+```
+
+Both fetch the same prebuilt binary — it's ask-enabled, so the Vision commands run on macOS 26+
+and `ask` lights up on macOS 27. Then run `macvis doctor` to see what's available here.
+
+<details><summary><b>Direct download / build from source</b></summary>
+
+**Direct download** — grab `macvis-<version>-macos-arm64.tar.gz` from
+[Releases](https://github.com/junmo-kim/mac-local-vision/releases), then:
+
+```bash
+shasum -a 256 -c macvis-*-macos-arm64.tar.gz.sha256   # verify the download
 tar xzf macvis-*-macos-arm64.tar.gz
-sudo mv macvis /usr/local/bin/               # or ~/.local/bin, if that's on your $PATH
-macvis doctor
+sudo mv macvis /usr/local/bin/                        # or ~/.local/bin on your $PATH
 ```
 
-Release binaries are ad-hoc signed (not notarized), so the first launch may trip Gatekeeper —
-approve it under System Settings → Privacy & Security, or just build from source. The Beta
-`ask` command needs the separate `…-ask27.tar.gz` asset (built against the macOS 27 SDK).
+The binary is ad-hoc signed (not notarized), so a directly-downloaded copy may trip Gatekeeper —
+approve it under System Settings → Privacy & Security. (Homebrew / mise installs avoid this.)
+
+**From source** (Swift 6.2+ toolchain / Xcode 26):
+
+```bash
+swift build -c release && cp .build/release/macvis /usr/local/bin/
+```
+
+</details>
 
 ## Status
 
