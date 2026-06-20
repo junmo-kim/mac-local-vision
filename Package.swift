@@ -10,5 +10,6 @@ let package = Package(
     targets: [
         .target(name: "VisionCore"),
         .testTarget(name: "PureLogicTests", dependencies: ["VisionCore"]),
+        .testTarget(name: "VisionTests", dependencies: ["VisionCore"]),
     ]
 )
