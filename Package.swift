@@ -2,16 +2,31 @@
 import PackageDescription
 
 // mac-local-vision — 100% Pure Swift single binary. No third-party dependencies.
-// Deployment target is macOS 26; the `ask` (multimodal) path is guarded behind a
-// compile flag (-D MACVIS_ASK_IMAGE) + @available(macOS 27, *).
+// Deployment target is macOS 26 (Vision modes). The `ask` (multimodal) path is
+// guarded behind @available(macOS 27, *) + runtime availability checks, so the
+// same binary runs on 26 (Vision-only) and 27 (full `ask`).
 let package = Package(
     name: "mac-local-vision",
     platforms: [.macOS("26.0")],
+    products: [
+        .executable(name: "macvis", targets: ["macvis"]),
+    ],
     targets: [
+        .executableTarget(
+            name: "macvis",
+            dependencies: ["VisionCore", "SemanticEngine"]
+        ),
+        // Vision-bound code (ocr/find/faces) + the pure logic it shares.
         .target(name: "VisionCore"),
+        // `ask` abstraction: protocol + Mock (CI) + AFM (macOS 27, guarded).
+        // Depends on VisionCore to reuse the shared image loader (page/scale/PDF/EXIF),
+        // so `ask` honors the same input contract as ocr/find.
         .target(name: "SemanticEngine", dependencies: ["VisionCore"]),
+        // Pure logic only — runs on any macOS runner (and conceptually Linux).
         .testTarget(name: "PureLogicTests", dependencies: ["VisionCore"]),
+        // `ask` plumbing (MockEngine / AskOutcome / SemanticError / mapCallError) without a model.
         .testTarget(name: "SemanticEngineTests", dependencies: ["SemanticEngine"]),
+        // Tier ②: Vision-bound OCR/find against rendered fixtures (macOS-gated).
         .testTarget(name: "VisionTests", dependencies: ["VisionCore"]),
     ]
 )
