@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: build + test (macOS 26 · core)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26.4.1
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.4.1'
+
+      - name: Versions
+        run: swift --version && xcodebuild -version
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: Test
+        run: swift test
+
+      - name: Privacy guard (stay on-device — no networking APIs)
+        run: |
+          if grep -rInE 'URLSession|URLRequest|NWConnection|NWListener|getaddrinfo|CFSocket|dataTask|downloadTask' Sources/; then
+            echo "::error::a networking API appears in Sources/ — macvis must stay fully on-device"; exit 1
+          fi
+          echo "ok: no networking APIs linked"
+
+      # NOTE: the `ask` multimodal path (-D MACVIS_ASK_IMAGE) needs the macOS 27 SDK
+      # (Xcode 27 beta), which GitHub-hosted runners don't ship yet
+      # (actions/runner-images#14196). It is built and released manually until then —
+      # see scripts/release-ask.sh. When Xcode 27 lands on the runners, add a second
+      # job here: `swift build -c release -Xswiftc -DMACVIS_ASK_IMAGE`.

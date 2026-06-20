@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release-core:
+    name: build + attach core binary (macOS 26)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26.4.1
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.4.1'
+
+      - name: Build (release, stripped) + package
+        run: |
+          swift build -c release -Xlinker -s
+          BIN=.build/release/macvis
+          TARBALL="macvis-${GITHUB_REF_NAME}-macos-arm64.tar.gz"
+          mkdir -p dist
+          tar -C "$(dirname "$BIN")" -czf "dist/${TARBALL}" "$(basename "$BIN")"
+          ( cd dist && shasum -a 256 "${TARBALL}" > "${TARBALL}.sha256" )
+
+      - name: Publish release (core binary)
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          body: |
+            ## macvis ${{ github.ref_name }}
+
+            **`macvis-${{ github.ref_name }}-macos-arm64.tar.gz`** — Apple Silicon, macOS 26+.
+            Core build: `ocr` / `find` / `doctor` / `sort-faces` / `mcp`. The `ask` (Beta)
+            multimodal command is **disabled** in this build (returns `needs_macos_27_sdk`),
+            because it requires the macOS 27 SDK that hosted runners don't have yet.
+
+            If a `…-macos-arm64-ask27.tar.gz` asset is attached, that is the same tool built
+            against the macOS 27 SDK — use it for `ask` on macOS 27 + Apple Intelligence.
