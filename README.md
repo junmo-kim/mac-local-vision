@@ -1,5 +1,9 @@
 # mac-local-vision (`macvis`)
 
+[![CI](https://github.com/junmo-kim/mac-local-vision/actions/workflows/ci.yml/badge.svg)](https://github.com/junmo-kim/mac-local-vision/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Platform: macOS 26+ · Apple Silicon](https://img.shields.io/badge/platform-macOS%2026%2B%20%C2%B7%20Apple%20Silicon-lightgrey)
+
 Zero-token, on-device vision for AI agents and E2E tests — built as a **100% Pure
 Swift single binary** on Apple's native `Vision` and `FoundationModels` frameworks.
 No Node, no Python, no runtime dependencies: the OS *is* the dependency.
