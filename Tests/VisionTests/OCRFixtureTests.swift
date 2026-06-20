@@ -11,7 +11,9 @@ import UniformTypeIdentifiers
 /// `ocr`/`find` regressions are caught automatically rather than only by hand. Assertions
 /// are deliberately loose (contains / in-bounds) — Vision output varies slightly by OS, so
 /// exact-string matching would be flaky.
-@Suite("OCREngine — fixture OCR (Vision-bound)")
+@Suite("OCREngine — fixture OCR (Vision-bound)",
+       .enabled(if: ProcessInfo.processInfo.environment["CI"] == nil,
+                "Vision OCR needs a real session — it hangs on headless CI runners; runs locally."))
 struct OCRFixtureTests {
     /// Render `text` (black on white) to a unique temp PNG; returns its path.
     static func renderFixture(_ text: String, width: Int = 480, height: Int = 140) -> String {
