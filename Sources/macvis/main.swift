@@ -30,6 +30,7 @@ func printUsage() {
 
     Run `macvis <command> --help` for a single command's flags.
     Output is YAML by default; data on stdout, errors on stderr.
+    https://github.com/junmo-kim/mac-local-vision
     """
     print(usage)
 }
