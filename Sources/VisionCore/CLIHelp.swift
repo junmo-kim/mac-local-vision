@@ -17,6 +17,7 @@ public enum CLIHelp {
         "sort-faces": "usage: macvis sort-faces <dir> [--output-dir DIR] [--threshold F] [--format yaml|json]",
         "find-person": "usage: macvis find-person --target <image> [--dir DIR] [--threshold F] [--format yaml|json]",
         "doctor": "usage: macvis doctor [--format yaml|json]",
+        "serve": "usage: macvis serve [--host H] [--port N]   (HTTP MCP server for remote nodes; default 0.0.0.0:9090)",
     ]
 
     /// Usage string for a command, or nil if the command has none.

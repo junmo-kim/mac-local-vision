@@ -14,21 +14,35 @@ enum MCPServer {
             if trimmed.isEmpty { continue }
             guard let data = trimmed.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                send(error: (-32700, "Parse error"), id: nil)
+                write(["jsonrpc": "2.0", "id": NSNull(),
+                       "error": ["code": -32700, "message": "Parse error"]])
                 continue
             }
-            let id = obj["id"]
-            guard let method = obj["method"] as? String else {
-                if id != nil { send(error: (-32600, "Invalid Request"), id: id) }
-                continue
+            if let response = await computeResponse(for: obj) {
+                write(response)
             }
-            let params = obj["params"] as? [String: Any] ?? [:]
-            await dispatch(method: method, id: id, params: params)
         }
         return ExitCode.success.rawValue
     }
 
-    private static func dispatch(method: String, id: Any?, params: [String: Any]) async {
+    /// Compute a JSON-RPC 2.0 response for a single request object.
+    /// Returns nil for notifications (no id / method not requiring reply).
+    /// Used by both the stdio transport (run()) and the HTTP transport (HTTPServer).
+    static func computeResponse(for obj: [String: Any]) async -> [String: Any]? {
+        let id = obj["id"]
+        guard let method = obj["method"] as? String else {
+            if id != nil { return errorResp((-32600, "Invalid Request"), id: id) }
+            return nil
+        }
+        // JSON-RPC 2.0 §5: a request with no `id` field is a notification — never reply.
+        guard id != nil else { return nil }
+        let params = obj["params"] as? [String: Any] ?? [:]
+        return await dispatch(method: method, id: id, params: params)
+    }
+
+    // MARK: - dispatch
+
+    private static func dispatch(method: String, id: Any?, params: [String: Any]) async -> [String: Any]? {
         switch method {
         case "initialize":
             // Negotiate: echo the client's version only if we support it; otherwise pin
@@ -36,59 +50,68 @@ enum MCPServer {
             let supported: Set<String> = ["2025-06-18", "2025-03-26", "2024-11-05"]
             let requested = params["protocolVersion"] as? String
             let negotiated = (requested != nil && supported.contains(requested!)) ? requested! : "2024-11-05"
-            send(result: [
+            return resultResp([
                 "protocolVersion": negotiated,
                 "capabilities": ["tools": [String: Any]()],
                 "serverInfo": ["name": "mac-local-vision", "version": version],
             ], id: id)
-        case "notifications/initialized", "initialized":
-            break // notification — no reply
         case "ping":
-            send(result: [String: Any](), id: id)
+            return resultResp([String: Any](), id: id)
         case "tools/list":
-            send(result: ["tools": MCPTools.all], id: id)
+            return resultResp(["tools": MCPTools.all], id: id)
         case "tools/call":
-            await handleToolCall(params: params, id: id)
+            return await handleToolCall(params: params, id: id)
         default:
-            if id != nil { send(error: (-32601, "Method not found: \(method)"), id: id) }
+            return errorResp((-32601, "Method not found: \(method)"), id: id)
         }
     }
 
-    private static func handleToolCall(params: [String: Any], id: Any?) async {
+    private static func handleToolCall(params: [String: Any], id: Any?) async -> [String: Any]? {
         guard let name = params["name"] as? String else {
-            send(error: (-32602, "Missing tool name"), id: id); return
+            return errorResp((-32602, "Missing tool name"), id: id)
         }
         let args = params["arguments"] as? [String: Any] ?? [:]
         guard let req = MCPTools.request(for: name, args: args) else {
-            send(error: (-32602, "Unknown tool: \(name)"), id: id); return
+            return errorResp((-32602, "Unknown tool: \(name)"), id: id)
         }
         // Default to YAML (token-lean, readable for an LLM); honor json on request.
         let fmt = OutputFormat(rawValue: (args["format"] as? String) ?? "yaml") ?? .yaml
         do {
             let result = try await VisionService.handle(req)
             // find-not-found (exitCode 1) is a valid answer, not a tool error.
-            send(toolText: result.value.render(as: fmt), isError: false, id: id)
+            return toolTextResp(result.value.render(as: fmt), isError: false, id: id)
         } catch let e as ServiceError {
-            send(toolText: e.envelope().render(as: fmt), isError: true, id: id)
+            return toolTextResp(e.envelope().render(as: fmt), isError: true, id: id)
         } catch {
-            send(toolText: "error: \(error)", isError: true, id: id)
+            return toolTextResp("error: \(error)", isError: true, id: id)
         }
     }
 
-    // MARK: - JSON-RPC framing
+    // MARK: - response builders
 
-    private static func send(result: [String: Any], id: Any?) {
-        write(["jsonrpc": "2.0", "id": id ?? NSNull(), "result": result])
+    // Invariant: callers only reach these builders after `guard id != nil` fires in
+    // computeResponse(), so `id` is always non-nil here. NSNull() (explicit "id":null from
+    // a client) is non-nil in Swift — `if let id` binds it and serializes to "id":null per
+    // JSON-RPC 2.0 §5. Do NOT add `!(id is NSNull)` — that would silently drop required fields.
+
+    private static func resultResp(_ result: [String: Any], id: Any?) -> [String: Any] {
+        var d: [String: Any] = ["jsonrpc": "2.0", "result": result]
+        d["id"] = id ?? NSNull()
+        return d
     }
 
-    private static func send(toolText text: String, isError: Bool, id: Any?) {
-        send(result: ["content": [["type": "text", "text": text]], "isError": isError], id: id)
+    private static func errorResp(_ error: (Int, String), id: Any?) -> [String: Any] {
+        var d: [String: Any] = ["jsonrpc": "2.0",
+                                "error": ["code": error.0, "message": error.1]]
+        d["id"] = id ?? NSNull()
+        return d
     }
 
-    private static func send(error: (Int, String), id: Any?) {
-        write(["jsonrpc": "2.0", "id": id ?? NSNull(),
-               "error": ["code": error.0, "message": error.1]])
+    private static func toolTextResp(_ text: String, isError: Bool, id: Any?) -> [String: Any] {
+        resultResp(["content": [["type": "text", "text": text]], "isError": isError], id: id)
     }
+
+    // MARK: - stdio write
 
     private static func write(_ msg: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: msg, options: [.withoutEscapingSlashes]) else { return }
@@ -121,12 +144,14 @@ enum MCPTools {
             words=true for per-word boxes. Coordinate convention: x,y = click center; \
             left/top/width/height = bounding box; top-left origin; physical pixels. Recognition \
             languages auto-detect from the system locale (override via languages). \
-            Use this to read a whole screen; use `find` to target one specific word.
+            Use this to read a whole screen; use `find` to target one specific word. \
+            Remote callers (non-Mac nodes): send the image as base64 in the `data` field instead of `path`.
             """,
             "inputSchema": [
                 "type": "object",
                 "properties": [
-                    "path": ["type": "string", "description": "Path to an image (png/jpg/heic/tiff/...) or a PDF."],
+                    "path": ["type": "string", "description": "Path to an image (png/jpg/heic/tiff/...) or a PDF. Required if `data` is not provided."],
+                    "data": ["type": "string", "description": "Base64-encoded image or PDF for remote (non-Mac) callers. Required if `path` is not provided. Takes precedence over `path` when both are supplied."],
                     "boxes": ["type": "boolean", "description": "Include per-line pixel coordinates. Default false."],
                     "words": ["type": "boolean", "description": "Include per-word coordinates (implies boxes). Default false."],
                     "fast": ["type": "boolean", "description": "Faster, lower-accuracy mode. Default false."],
@@ -137,7 +162,10 @@ enum MCPTools {
                     "scale": ["type": "number", "description": "PDF rasterization scale (2.0 ≈ 144 dpi). Default 2.0."],
                     "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format of the text block. Default yaml."],
                 ],
-                "required": ["path"],
+                // `required` intentionally omitted: path and data are mutually exclusive
+                // alternatives (XOR) that JSON Schema `required` cannot express — both are
+                // effectively required but only one must be present. `find` includes
+                // `required: ["target"]` because target is unconditionally required.
             ],
         ]
     }
@@ -151,12 +179,14 @@ enum MCPTools {
             `found` field: it is false when the target is absent. When `approximate: true` is \
             present, the box is the whole text line (click point is line-center, not word-tight). \
             Coordinate convention: top-left origin, physical pixels. Lower minConfidence for \
-            headless/blurry renders. Languages auto-detect from the system locale.
+            headless/blurry renders. Languages auto-detect from the system locale. \
+            Remote callers (non-Mac nodes): send the image as base64 in the `data` field instead of `path`.
             """,
             "inputSchema": [
                 "type": "object",
                 "properties": [
-                    "path": ["type": "string", "description": "Path to an image or PDF."],
+                    "path": ["type": "string", "description": "Path to an image or PDF. Use for local Mac callers."],
+                    "data": ["type": "string", "description": "Base64-encoded image or PDF for remote callers. Takes precedence over `path` when both are supplied."],
                     "target": ["type": "string", "description": "The exact text to locate."],
                     "minConfidence": ["type": "number", "description": "Confidence threshold (0..1). Default 0.3."],
                     "languages": ["type": "array", "items": ["type": "string"],
@@ -165,7 +195,7 @@ enum MCPTools {
                     "scale": ["type": "number", "description": "PDF scale. Default 2.0."],
                     "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
                 ],
-                "required": ["path", "target"],
+                "required": ["target"],
             ],
         ]
     }
@@ -191,7 +221,9 @@ enum MCPTools {
             cloud, no tokens). Needs macOS 27 + Apple Intelligence; on older systems it \
             returns a structured availability error (check `error`/`reason`). Use `ocr`/`find` \
             for plain text or pixel targeting — use `ask` when you need interpretation \
-            (describe this UI, what's the error, which button is primary, summarize this page).
+            (describe this UI, what's the error, which button is primary, summarize this page). \
+            Requires local filesystem access via `path` — remote HTTP callers cannot pass images \
+            in-memory for this tool; use `ocr`/`find` with `data` instead.
             """,
             "inputSchema": [
                 "type": "object",
@@ -211,14 +243,15 @@ enum MCPTools {
         switch name {
         case "ocr":
             return VisionRequest(
-                op: "ocr", path: args["path"] as? String,
+                op: "ocr", path: args["path"] as? String, data: args["data"] as? String,
                 fast: args["fast"] as? Bool, words: args["words"] as? Bool, boxes: args["boxes"] as? Bool,
                 minConfidence: number(args["minConfidence"]),
                 languages: args["languages"] as? [String],
                 page: int(args["page"]), scale: number(args["scale"]))
         case "find":
             return VisionRequest(
-                op: "find", path: args["path"] as? String, target: args["target"] as? String,
+                op: "find", path: args["path"] as? String, data: args["data"] as? String,
+                target: args["target"] as? String,
                 minConfidence: number(args["minConfidence"]),
                 languages: args["languages"] as? [String],
                 page: int(args["page"]), scale: number(args["scale"]))

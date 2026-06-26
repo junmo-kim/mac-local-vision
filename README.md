@@ -85,6 +85,7 @@ swift build -c release && cp .build/release/macvis /usr/local/bin/
 | `doctor` | ✅ working | macOS 26 |
 | `sort-faces` / `find-person` | ✅ working — same-session grouping; cross-time identity is approximate (see note) | Apple Silicon · macOS 26 |
 | `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/doctor as tools (+ask on macOS 27 builds) | macOS 26 |
+| `serve` | ✅ working — HTTP JSON-RPC MCP server for remote/non-Mac nodes | macOS 26 |
 | `ask` | 🟢 Beta — targets a pre-release Apple stack (macOS 27 Beta + Foundation Models multimodal). Built against the macOS 27 SDK with the call shape from Apple's official WWDC26 example; availability/error path verified on a real macOS 27 boot. Graduates from Beta as macOS 27 ships (see note). | macOS 27 (Beta) + Apple Intelligence |
 
 > **`sort-faces` accuracy**: faces are grouped by an image feature print over the face
@@ -170,12 +171,29 @@ ocr_languages:
 
 Two equivalent integrations — both run the same `VisionService` engine, so the output is identical.
 
-**MCP server** — `macvis mcp` speaks stdio JSON-RPC and exposes `ocr` / `find` / `doctor` as tools
+**MCP server (stdio)** — `macvis mcp` speaks stdio JSON-RPC and exposes `ocr` / `find` / `doctor` as tools
 (plus `ask` when the binary is built with the macOS 27 multimodal path):
 
 ```json
 { "mcpServers": { "mac-vision": { "command": "/path/to/macvis", "args": ["mcp"] } } }
 ```
+
+**MCP server (HTTP)** — `macvis serve` runs an HTTP JSON-RPC endpoint for non-Mac or remote nodes
+that cannot launch a local process. Defaults to `0.0.0.0:9090`; use `--host` / `--port` to restrict:
+
+```bash
+macvis serve --host 127.0.0.1 --port 9090   # loopback only (safest)
+macvis serve                                  # all interfaces — warns on startup; restrict with a firewall
+```
+
+Configure remote nodes to use `type: http` with the Mac's LAN address:
+
+```json
+{ "mcpServers": { "macvis": { "type": "http", "url": "http://192.168.x.y:9090/mcp" } } }
+```
+
+Remote callers pass images as base64 in the `data` field instead of `path`. There is no built-in
+authentication — treat this as a filesystem read service on your LAN and secure accordingly.
 
 **Claude Code skill** — this repo ships one in [`skills/macvis/`](skills/macvis/SKILL.md).
 Symlink it into your skills directory:

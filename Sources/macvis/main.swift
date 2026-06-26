@@ -23,6 +23,7 @@ func printUsage() {
 
     AGENT INTERFACE:
       mcp                         MCP server over stdio (JSON-RPC) — ocr/find/doctor tools (+ask on macOS 27 builds)
+      serve [--host H] [--port N] HTTP MCP server for remote nodes — default 0.0.0.0:9090
 
     UTILITY:
       doctor                      Report which modes are available here
@@ -51,6 +52,7 @@ func dispatch(_ args: [String]) async -> Int32 {
         case "sort-faces", "find-person": return try FacesCommand.run(sub, rest)
         case "doctor":                 return await DoctorCommand.run(rest)
         case "mcp":                    return await MCPCommand.run(rest)
+        case "serve":                  return await ServeCommand.run(rest)
         case "help", "-h", "--help":   printUsage(); return ExitCode.success.rawValue
         case "version", "--version":   print("macvis \(version)"); return ExitCode.success.rawValue
         default:

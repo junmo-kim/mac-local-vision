@@ -143,3 +143,29 @@ enum FacesCommand {
 enum MCPCommand {
     static func run(_ args: [String]) async -> Int32 { await MCPServer.run() }
 }
+
+// MARK: - serve
+
+enum ServeCommand {
+    static func run(_ args: [String]) async -> Int32 {
+        if CLIHelp.wantsHelp(args) {
+            print(CLIHelp.usage(for: "serve") ?? "usage: macvis serve [--host H] [--port N]")
+            return ExitCode.success.rawValue
+        }
+        let parsed = ArgParser.parse(args)
+        let host = parsed.option("host") ?? "0.0.0.0"
+        var rawPort: UInt16 = 9090
+        if let portStr = parsed.option("port") {
+            guard let p = UInt16(portStr), p != 0 else {
+                IO.warn("error: --port must be 1–65535, got: \(portStr)")
+                return ExitCode.usage.rawValue
+            }
+            rawPort = p
+        }
+        if host == "0.0.0.0" || host == "::" {
+            IO.warn("warning: serve is listening on all interfaces with no authentication — " +
+                    "restrict access with a firewall or use --host 127.0.0.1 for local-only.")
+        }
+        return await HTTPServer.run(host: host, port: rawPort)
+    }
+}
