@@ -34,10 +34,15 @@ jobs:
 
       - name: Privacy guard (stay on-device — no networking APIs)
         run: |
-          if grep -rInE 'URLSession|URLRequest|NWConnection|NWListener|getaddrinfo|CFSocket|dataTask|downloadTask' Sources/; then
+          # HTTPServer.swift is the sole intentional user of Network.framework APIs.
+          # The pattern below bans a named subset of networking symbols everywhere else;
+          # it does not claim to be exhaustive — the list covers the most common Apple
+          # and POSIX networking entry points that would indicate unintended network access.
+          if grep -rInE 'URLSession|URLRequest|NWConnection|NWListener|NWPath|NWBrowser|NWEndpoint|NWParameters|import Network([^A-Za-z]|$)|getaddrinfo|CFSocket|dataTask|downloadTask' Sources/ \
+              | grep -v 'Sources/macvis/HTTPServer\.swift:'; then
             echo "::error::a networking API appears in Sources/ — macvis must stay fully on-device"; exit 1
           fi
-          echo "ok: no networking APIs linked"
+          echo "ok: no networking APIs outside HTTPServer.swift"
 
       # NOTE: the `ask` multimodal path (-D MACVIS_ASK_IMAGE) needs the macOS 27 SDK
       # (Xcode 27 beta), which GitHub-hosted runners don't ship yet
