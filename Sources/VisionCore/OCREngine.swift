@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 #if canImport(Vision)
 import Vision
@@ -76,21 +77,23 @@ public enum OCREngine {
     /// for the long-lived MCP server calling `doctor` repeatedly). Vision rejects ≤2px
     /// images, so use 32×32.
     public static func textVisionAvailable() -> Bool {
-        if let cached = textProbeCache { return cached }
-        let ok = probe { VNRecognizeTextRequest() }
-        textProbeCache = ok
-        return ok
+        _textProbe.withLock { cached in
+            if let v = cached { return v }
+            let ok = probe { VNRecognizeTextRequest() }
+            cached = ok; return ok
+        }
     }
 
     public static func faceVisionAvailable() -> Bool {
-        if let cached = faceProbeCache { return cached }
-        let ok = probe { VNDetectFaceRectanglesRequest() }
-        faceProbeCache = ok
-        return ok
+        _faceProbe.withLock { cached in
+            if let v = cached { return v }
+            let ok = probe { VNDetectFaceRectanglesRequest() }
+            cached = ok; return ok
+        }
     }
 
-    nonisolated(unsafe) private static var textProbeCache: Bool?
-    nonisolated(unsafe) private static var faceProbeCache: Bool?
+    private static let _textProbe = OSAllocatedUnfairLock(initialState: Optional<Bool>.none)
+    private static let _faceProbe = OSAllocatedUnfairLock(initialState: Optional<Bool>.none)
 
     private static func probe(_ makeRequest: () -> VNRequest) -> Bool {
         guard let ctx = CGContext(data: nil, width: 32, height: 32, bitsPerComponent: 8,
@@ -104,6 +107,8 @@ public enum OCREngine {
             return false
         }
     }
+
+    // MARK: - Image loading (path)
 
     public static func loadImage(path: String, page: Int = 1, scale: Double = 2.0) throws -> (cgImage: CGImage, width: Int, height: Int) {
         let url = URL(fileURLWithPath: path)
@@ -132,7 +137,8 @@ public enum OCREngine {
         let ph = (props?[kCGImagePropertyPixelHeight] as? Int) ?? 0
         // Bound the decode: a crafted header claiming huge dimensions would otherwise drive an
         // unbounded decode/allocation. Per-dim guards keep `pw * ph` from overflowing Int.
-        guard pw >= 0, ph >= 0, pw <= maxRasterPixels, ph <= maxRasterPixels,
+        // Negative dimensions are theoretically possible from malformed network-sourced images.
+        guard pw > 0, ph > 0, pw <= maxRasterPixels, ph <= maxRasterPixels,
               pw * ph <= maxRasterPixels else { return nil }
         let orientation = (props?[kCGImagePropertyOrientation] as? Int) ?? 1
         if orientation == 1 {
@@ -192,6 +198,62 @@ public enum OCREngine {
         return ctx.makeImage()
     }
 
+    // MARK: - Image loading (data — for remote/HTTP callers)
+
+    public static func loadImage(data: Data, page: Int = 1, scale: Double = 2.0) throws -> (cgImage: CGImage, width: Int, height: Int) {
+        if let image = loadOriented(data: data) {
+            return (image, image.width, image.height)
+        }
+        if let pdf = renderPDFPage(data: data, page: page, scale: CGFloat(scale)) {
+            return (pdf, pdf.width, pdf.height)
+        }
+        throw VisionError.imageLoadFailed("<base64 data>")
+    }
+
+    static func loadOriented(data: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let pw = (props?[kCGImagePropertyPixelWidth] as? Int) ?? 0
+        let ph = (props?[kCGImagePropertyPixelHeight] as? Int) ?? 0
+        guard pw > 0, ph > 0, pw <= maxRasterPixels, ph <= maxRasterPixels,
+              pw * ph <= maxRasterPixels else { return nil }
+        let orientation = (props?[kCGImagePropertyOrientation] as? Int) ?? 1
+        if orientation == 1 {
+            return CGImageSourceCreateImageAtIndex(source, 0, nil)
+        }
+        var options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+        ]
+        let maxDim = max(pw, ph)
+        if maxDim > 0 { options[kCGImageSourceThumbnailMaxPixelSize] = maxDim }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            ?? CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    static func renderPDFPage(data: Data, page: Int, scale: CGFloat) -> CGImage? {
+        guard let provider = CGDataProvider(data: data as CFData),
+              let doc = CGPDFDocument(provider),
+              page >= 1, page <= doc.numberOfPages,
+              let pdfPage = doc.page(at: page) else { return nil }
+        let box = pdfPage.getBoxRect(.mediaBox)
+        guard let (width, height) = clampedRasterSize(
+            boxWidth: box.width, boxHeight: box.height, scale: scale) else { return nil }
+        guard let ctx = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        ctx.scaleBy(x: scale, y: scale)
+        ctx.translateBy(x: -box.origin.x, y: -box.origin.y)
+        ctx.drawPDFPage(pdfPage)
+        return ctx.makeImage()
+    }
+
+    // MARK: - recognize (path + data)
+
     public static func recognize(
         path: String,
         fast: Bool = false,
@@ -202,7 +264,30 @@ public enum OCREngine {
         scale: Double = 2.0
     ) throws -> OCRResult {
         let (cgImage, width, height) = try loadImage(path: path, page: page, scale: scale)
+        return try recognizeCore(cgImage: cgImage, width: width, height: height,
+                                  fast: fast, minConfidence: minConfidence,
+                                  languages: languages, includeWords: includeWords)
+    }
 
+    public static func recognize(
+        data: Data,
+        fast: Bool = false,
+        minConfidence: Double = 0.0,
+        languages: [String] = [],
+        includeWords: Bool = false,
+        page: Int = 1,
+        scale: Double = 2.0
+    ) throws -> OCRResult {
+        let (cgImage, width, height) = try loadImage(data: data, page: page, scale: scale)
+        return try recognizeCore(cgImage: cgImage, width: width, height: height,
+                                  fast: fast, minConfidence: minConfidence,
+                                  languages: languages, includeWords: includeWords)
+    }
+
+    private static func recognizeCore(
+        cgImage: CGImage, width: Int, height: Int,
+        fast: Bool, minConfidence: Double, languages: [String], includeWords: Bool
+    ) throws -> OCRResult {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = fast ? .fast : .accurate
         request.usesLanguageCorrection = !fast
@@ -240,6 +325,8 @@ public enum OCREngine {
         return OCRResult(lines: lines, fullText: fullText, imageWidth: width, imageHeight: height)
     }
 
+    // MARK: - find (path + data)
+
     /// Locate `target` and return the center pixel of just that sub-string.
     /// Returns `nil` when the target is not found above the confidence threshold.
     public static func find(
@@ -251,7 +338,27 @@ public enum OCREngine {
         scale: Double = 2.0
     ) throws -> FindResult? {
         let (cgImage, width, height) = try loadImage(path: path, page: page, scale: scale)
+        return try findCore(cgImage: cgImage, width: width, height: height,
+                            target: target, minConfidence: minConfidence, languages: languages)
+    }
 
+    public static func find(
+        data: Data,
+        target: String,
+        minConfidence: Double = 0.3,
+        languages: [String] = [],
+        page: Int = 1,
+        scale: Double = 2.0
+    ) throws -> FindResult? {
+        let (cgImage, width, height) = try loadImage(data: data, page: page, scale: scale)
+        return try findCore(cgImage: cgImage, width: width, height: height,
+                            target: target, minConfidence: minConfidence, languages: languages)
+    }
+
+    private static func findCore(
+        cgImage: CGImage, width: Int, height: Int,
+        target: String, minConfidence: Double, languages: [String]
+    ) throws -> FindResult? {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate // headless font defense (architecture §5.2)
         request.usesLanguageCorrection = true

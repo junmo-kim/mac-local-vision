@@ -5,6 +5,7 @@ import Foundation
 public struct VisionRequest: Codable, Sendable {
     public var op: String              // ocr | find | doctor | ask | ping
     public var path: String?
+    public var data: String?           // base64-encoded image/PDF — alternative to path for remote callers
     public var target: String?
     public var prompt: String?
     public var fast: Bool?
@@ -17,11 +18,13 @@ public struct VisionRequest: Codable, Sendable {
     public var scale: Double?
     public var format: String?         // yaml | json — output rendering
 
-    public init(op: String, path: String? = nil, target: String? = nil, prompt: String? = nil,
+    public init(op: String, path: String? = nil, data: String? = nil,
+                target: String? = nil, prompt: String? = nil,
                 fast: Bool? = nil, words: Bool? = nil, boxes: Bool? = nil, stream: Bool? = nil,
                 minConfidence: Double? = nil, languages: [String]? = nil,
                 page: Int? = nil, scale: Double? = nil, format: String? = nil) {
-        self.op = op; self.path = path; self.target = target; self.prompt = prompt
+        self.op = op; self.path = path; self.data = data
+        self.target = target; self.prompt = prompt
         self.fast = fast; self.words = words; self.boxes = boxes; self.stream = stream
         self.minConfidence = minConfidence; self.languages = languages
         self.page = page; self.scale = scale; self.format = format
@@ -51,6 +54,37 @@ public struct ServiceError: Error, Sendable {
         if let detail { fields.append(("detail", .string(detail))) }
         if let hint { fields.append(("hint", .string(hint))) }
         return .dict(fields)
+    }
+}
+
+/// Resolves a VisionRequest's input to either a local file path or decoded image bytes.
+/// Pure logic — no filesystem access, no Vision dependencies. Used by VisionService and
+/// testable from PureLogicTests.
+public enum InputSource: Sendable {
+    case path(String)
+    case data(Data)  // base64-decoded, for remote (non-Mac) callers
+
+    public var label: String {
+        if case .path(let p) = self { return p }
+        return "<base64 data>"
+    }
+
+    /// Resolve from a request's path/data fields. `data` takes precedence over `path`.
+    public static func resolve(path: String?, data: String?) throws -> InputSource {
+        if let b64 = data, !b64.isEmpty {
+            guard let decoded = Data(base64Encoded: b64, options: .ignoreUnknownCharacters) else {
+                throw ServiceError(name: "bad_request", reason: "invalid_base64",
+                                   hint: "data must be a valid base64-encoded image or PDF",
+                                   exitCode: 1)
+            }
+            return .data(decoded)
+        }
+        guard let p = path, !p.isEmpty else {
+            throw ServiceError(name: "bad_request", reason: "missing_input",
+                               hint: "provide path (local file) or data (base64-encoded image/PDF)",
+                               exitCode: 1)
+        }
+        return .path(p)
     }
 }
 

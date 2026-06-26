@@ -18,17 +18,28 @@ enum VisionService {
         }
     }
 
+    // MARK: - Input resolution (pure logic lives in VisionCore.InputSource.resolve)
+
     // MARK: - ocr
 
     static func ocr(_ req: VisionRequest) throws -> ServiceResult {
-        let path = try requirePath(req)
+        let input = try InputSource.resolve(path: req.path, data: req.data)
         let withWords = req.words ?? false
         let withBoxes = (req.boxes ?? false) || withWords  // --words implies line boxes
         do {
-            let r = try OCREngine.recognize(
-                path: path, fast: req.fast ?? false, minConfidence: req.minConfidence ?? 0.0,
-                languages: req.languages ?? [], includeWords: withWords,
-                page: req.page ?? 1, scale: req.scale ?? 2.0)
+            let r: OCRResult
+            switch input {
+            case .path(let p):
+                r = try OCREngine.recognize(
+                    path: p, fast: req.fast ?? false, minConfidence: req.minConfidence ?? 0.0,
+                    languages: req.languages ?? [], includeWords: withWords,
+                    page: req.page ?? 1, scale: req.scale ?? 2.0)
+            case .data(let d):
+                r = try OCREngine.recognize(
+                    data: d, fast: req.fast ?? false, minConfidence: req.minConfidence ?? 0.0,
+                    languages: req.languages ?? [], includeWords: withWords,
+                    page: req.page ?? 1, scale: req.scale ?? 2.0)
+            }
             let w = r.imageWidth, h = r.imageHeight
             let lines = r.lines.map { line -> YAMLValue in
                 var fields: [(String, YAMLValue)] = [
@@ -48,22 +59,31 @@ enum VisionService {
                 ("lines", .array(lines)),
             ]))
         } catch let e as VisionError {
-            throw imageError(e, path: path)
+            throw imageError(e, label: input.label)
         }
     }
 
     // MARK: - find
 
     static func find(_ req: VisionRequest) throws -> ServiceResult {
-        let path = try requirePath(req)
+        let input = try InputSource.resolve(path: req.path, data: req.data)
         guard let target = req.target, !target.isEmpty else {
             throw ServiceError(name: "bad_request", reason: "missing_target",
                                hint: "find requires the target text to locate", exitCode: ExitCode.usage.rawValue)
         }
         do {
-            guard let hit = try OCREngine.find(
-                path: path, target: target, minConfidence: req.minConfidence ?? 0.3,
-                languages: req.languages ?? [], page: req.page ?? 1, scale: req.scale ?? 2.0) else {
+            let hit: FindResult?
+            switch input {
+            case .path(let p):
+                hit = try OCREngine.find(
+                    path: p, target: target, minConfidence: req.minConfidence ?? 0.3,
+                    languages: req.languages ?? [], page: req.page ?? 1, scale: req.scale ?? 2.0)
+            case .data(let d):
+                hit = try OCREngine.find(
+                    data: d, target: target, minConfidence: req.minConfidence ?? 0.3,
+                    languages: req.languages ?? [], page: req.page ?? 1, scale: req.scale ?? 2.0)
+            }
+            guard let hit else {
                 // Not found is a valid outcome (not an error): result + exit 1 for `&&` chains.
                 return ServiceResult(.dict([("found", .bool(false)), ("target", .string(target))]), exitCode: 1)
             }
@@ -78,7 +98,7 @@ enum VisionService {
             if hit.approximate { fields.append(("approximate", .bool(true))) }
             return ServiceResult(.dict(fields))
         } catch let e as VisionError {
-            throw imageError(e, path: path)
+            throw imageError(e, label: input.label)
         }
     }
 
@@ -147,14 +167,14 @@ enum VisionService {
                 ("width", .int(px.width)), ("height", .int(px.height))]
     }
 
-    private static func imageError(_ e: VisionError, path: String) -> ServiceError {
+    private static func imageError(_ e: VisionError, label: String) -> ServiceError {
         switch e {
         case .imageLoadFailed:
-            return ServiceError(name: "image_load_failed", reason: "unreadable_or_unsupported", detail: path,
-                                hint: "check the path; supported: png/jpg/heic/tiff/... or PDF (set page).",
+            return ServiceError(name: "image_load_failed", reason: "unreadable_or_unsupported", detail: label,
+                                hint: "check the path or base64 data; supported: png/jpg/heic/tiff/... or PDF (set page).",
                                 exitCode: ExitCode.runtimeError.rawValue)
         case .noFace:
-            return ServiceError(name: "no_face", reason: "no_face_detected", detail: path,
+            return ServiceError(name: "no_face", reason: "no_face_detected", detail: label,
                                 hint: "provide an image containing a clearly visible face", exitCode: ExitCode.runtimeError.rawValue)
         }
     }
