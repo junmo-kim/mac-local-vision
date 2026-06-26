@@ -19,9 +19,10 @@ DEV="${DEVELOPER_DIR:-/Applications/Xcode-27.0.0-Beta.app/Contents/Developer}"
 [ -d "$DEV" ] || { echo "✗ Xcode 27 SDK not found at: $DEV  (set DEVELOPER_DIR)"; exit 1; }
 command -v gh >/dev/null || { echo "✗ gh CLI not found / not on PATH"; exit 1; }
 
-# Privacy guard — the same on-device check CI runs. This is the one binary published
-# outside CI, so enforce it here too before building/uploading.
-if grep -rInE 'URLSession|URLRequest|NWConnection|NWListener|getaddrinfo|CFSocket|dataTask|downloadTask' Sources/; then
+# Privacy guard — mirrors the CI check. HTTPServer.swift is the sole intentional user
+# of Network.framework; all other files must stay fully on-device.
+if grep -rInE 'URLSession|URLRequest|NWConnection|NWListener|NWPath|NWBrowser|NWEndpoint|NWParameters|import Network([^A-Za-z]|$)|getaddrinfo|CFSocket|dataTask|downloadTask' Sources/ \
+    | grep -v 'Sources/macvis/HTTPServer\.swift:'; then
   echo "✗ a networking API appears in Sources/ — refusing to build/publish"; exit 1
 fi
 
