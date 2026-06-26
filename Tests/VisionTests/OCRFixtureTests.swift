@@ -73,5 +73,35 @@ struct OCRFixtureTests {
             _ = try OCREngine.recognize(path: "/no/such/file.png")
         }
     }
+
+    // MARK: - data (base64) path — same logic, in-memory instead of disk
+
+    @Test("recognize(data:) reads the same text as recognize(path:)")
+    func recognizesFromData() throws {
+        let path = Self.renderFixture("DataPath")
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let result = try OCREngine.recognize(data: data, languages: ["en-US"])
+        #expect(result.fullText.contains("DataPath"))
+        #expect(result.imageWidth == 480 && result.imageHeight == 140)
+    }
+
+    @Test("find(data:) locates the target in an in-memory image")
+    func findsFromData() throws {
+        let path = Self.renderFixture("ClickMe")
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let hit = try #require(try OCREngine.find(data: data, target: "ClickMe", languages: ["en-US"]))
+        #expect(hit.textFound.contains("ClickMe"))
+        #expect(hit.rect.centerX > 0 && hit.rect.centerX < 480)
+    }
+
+    @Test("garbage bytes → imageLoadFailed (not valid raster or PDF)")
+    func garbageDataThrows() {
+        let garbage = Data(repeating: 0xAB, count: 64)
+        #expect(throws: VisionError.self) {
+            _ = try OCREngine.recognize(data: garbage, languages: ["en-US"])
+        }
+    }
 }
 #endif
