@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.2.1
+
+Fixes a real process crash in `ask` when Apple Intelligence isn't ready yet (SIGSEGV
+inside FoundationModels on macOS 27 Beta, not a catchable error) and reclassifies a
+transient content-safety-model error as retryable instead of a hard failure. Adds
+`ask_languages` to `doctor`, reporting which languages `ask` can answer in right now.
+
 ## v0.2.0
 
 Adds `macvis serve` — an HTTP MCP transport for remote MCP clients — plus base64
