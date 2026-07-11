@@ -204,9 +204,10 @@ enum MCPTools {
         [
             "name": "doctor",
             "description": """
-            Report which vision modes work on this machine and the default OCR languages. \
-            Call this first if unsure whether `ask` (multimodal reasoning; needs macOS 27 + Apple Intelligence) \
-            is available — ocr/find work on any Apple Silicon + macOS 26.
+            Report which vision modes work on this machine, the default OCR languages, and \
+            (via `ask_languages`) which languages `ask` can answer in right now. Call this \
+            first if unsure whether `ask` (multimodal reasoning; needs macOS 27 + Apple \
+            Intelligence) is available — ocr/find work on any Apple Silicon + macOS 26.
             """,
             "inputSchema": ["type": "object", "properties": [String: Any]()],
         ]
