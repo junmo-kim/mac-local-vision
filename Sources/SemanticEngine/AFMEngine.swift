@@ -28,10 +28,13 @@ public struct AFMEngine: SemanticEngine {
 
     public func ask(imagePath: String, prompt: String, stream: Bool,
                     page: Int, scale: Double) async throws -> AskOutcome {
-        // Authoritative design: do NOT pre-judge eligibility from device specs or the
-        // availability probe. Attempt the real call and let the framework's thrown error
-        // decide — unknown errors are surfaced, not guessed. (`probeAskAvailability` is
-        // kept for `doctor` preflight only.)
+        // Originally this let the framework's thrown error decide eligibility, without
+        // pre-judging from the availability probe. On macOS 27 Beta (26A5378j) that
+        // assumption doesn't hold: calling LanguageModelSession/Attachment while the model
+        // isn't ready crashes the process (EXC_BAD_ACCESS/SIGSEGV inside FoundationModels'
+        // XPC layer, verified via crash report) instead of throwing a catchable error. So we
+        // gate on the probe (right before that call, below) and only let the framework
+        // decide once it reports available.
         #if MACVIS_ASK_IMAGE
         // macOS 27 SDK build. Signatures verified against MacOSX27.0.sdk (Xcode 27 beta
         // 27A5194q): `Attachment(<NSImage|CGImage>)` inside a `respond`/`streamResponse`
@@ -53,6 +56,12 @@ public struct AFMEngine: SemanticEngine {
             throw SemanticError.failed(
                 reason: "image_load_failed", detail: imagePath,
                 hint: "check the path / format (png/jpg/heic/pdf — use page for multi-page PDFs).")
+        }
+        // Gated as late as possible — right before the crash-prone call, after image
+        // loading — to keep the check-to-call window (and thus the chance the model flips
+        // states in between) as narrow as possible.
+        if let unavailable = Self.mapAvailabilityError(probeAskAvailability()) {
+            throw unavailable
         }
         // On-device only, by design. The framework *also* ships a Private Cloud Compute
         // backend — `LanguageModelSession(model: PrivateCloudComputeLanguageModel())`, which
@@ -90,6 +99,37 @@ public struct AFMEngine: SemanticEngine {
             hint: "Build on macOS 26.4+ with the Xcode 27 SDK and -D MACVIS_ASK_IMAGE, run on macOS 27."
         )
         #endif
+    }
+
+    /// Maps a pre-flight `probeAskAvailability()` result to the structured error `ask()`
+    /// should throw before attempting the real call — or `nil` when the call is safe to
+    /// attempt. Pulled out of `ask()` as a pure function (mirroring `mapCallError`/
+    /// `mapCallErrorByMessage` below) so the pre-flight gate is unit-testable without live
+    /// FoundationModels state. Locked by MapAvailabilityErrorTests.
+    static func mapAvailabilityError(_ availability: AskAvailability) -> SemanticError? {
+        switch availability {
+        case .available:
+            return nil
+        case .ineligible(let reason):
+            return .ineligible(
+                reason: reason,
+                detail: "This Mac can't run ask on-device.",
+                hint: "ask needs an Apple-Intelligence-eligible Apple Silicon Mac on macOS 27 (Beta) — signed in, supported region, internal boot (eligibility is blocked on external-boot disks).")
+        case .osTooOld(let reason):
+            return .ineligible(
+                reason: reason,
+                detail: "Image input requires macOS 27.",
+                hint: "Run on macOS 27 + M3/M4 (12GB+).")
+        case .notReady(let reason):
+            return .temporarilyUnavailable(
+                reason: reason,
+                detail: reason == "apple_intelligence_not_enabled"
+                    ? "Apple Intelligence is off."
+                    : "The model is still downloading.",
+                hint: reason == "apple_intelligence_not_enabled"
+                    ? "Enable Apple Intelligence in System Settings, then retry."
+                    : "Retry shortly.")
+        }
     }
 
     /// Map a real FoundationModels call error to our structured error. Authoritative —
@@ -182,9 +222,11 @@ public struct AFMEngine: SemanticEngine {
 }
 #endif
 
-/// Preflight (advisory) availability — used by `doctor` to show what's likely possible.
-/// NOT used to gate `ask`: the authoritative signal is the real call's thrown error
-/// (see `AFMEngine.ask`). Reads the system's reported availability, never device specs.
+/// Preflight availability — used by `doctor` to show what's likely possible, AND (via
+/// `AFMEngine.mapAvailabilityError`) as the pre-flight gate in `ask()` that avoids calling
+/// into FoundationModels while the model isn't ready — a real SIGSEGV on macOS 27 Beta
+/// (26A5378j), not just a thrown error; see `ask()`'s doc comment. Reads the system's
+/// reported availability, never device specs.
 public func probeAskAvailability() -> AskAvailability {
 #if canImport(FoundationModels)
     if #available(macOS 26, *) {
