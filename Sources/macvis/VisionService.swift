@@ -122,9 +122,13 @@ enum VisionService {
         askStatus = .string("unavailable: needs_macos_27_sdk")
         #endif
         let langs = OCREngine.systemDefaultLanguages().map { YAMLValue.string($0) }
+        // Readiness, not capability — empty unless the model is available *now*; when it is,
+        // this is what it can currently handle across the languages it supports.
+        let askLangs = readyAskLanguages().map { YAMLValue.string($0) }
         return .dict([
             ("ocr", text), ("find", text), ("sort-faces", face),
             ("ask", askStatus), ("ocr_languages", .array(langs)),
+            ("ask_languages", .array(askLangs)),
         ])
     }
 

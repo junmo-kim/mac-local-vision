@@ -262,3 +262,35 @@ public func probeAskAvailability() -> AskAvailability {
 #endif
     return .osTooOld(reason: "foundation_models_unavailable")
 }
+
+/// Languages the on-device model can actually respond in *right now*. Verified empirically
+/// (2026-07-12): once `.available`, the model handles prompts fluently across many of its
+/// `supportedLanguages` — not just the current system language (tested ko/en/ja/fr, only
+/// ko/en were in Preferred Languages, all four worked). So "ready" isn't gated per-language;
+/// `.availability` is a single global switch and `supportedLanguages` is what's usable once
+/// it's on. (Switching Siri's *system* language can still bounce `ask` back to
+/// `model_not_ready` temporarily — that looks like Apple Intelligence re-provisioning as a
+/// whole when the primary language changes, not a per-language asset gate; see 2026-07-11
+/// per-language-download topic, corrected 2026-07-12.)
+///
+/// Gated on both the `MACVIS_ASK_IMAGE` compile flag and `probeAskAvailability()` — exactly
+/// mirroring how `ask()` itself and `doctor`'s `askStatus` are gated (`probeAskAvailability()`
+/// alone only checks the runtime OS version, not whether *this binary* was built with image
+/// support, so skipping the compile-flag check would let a core build on real macOS 27
+/// hardware report non-empty `ask_languages` while `ask` itself still says
+/// `needs_macos_27_sdk`). So this never disagrees with `ask`'s own reported status: `[]`
+/// whenever `ask` would report unavailable, the full `supportedLanguages` set (~24) once
+/// `ask` is truly `available`. Used by `doctor` (`ask_languages`).
+public func readyAskLanguages() -> [String] {
+#if MACVIS_ASK_IMAGE
+    guard case .available = probeAskAvailability() else { return [] }
+#if canImport(FoundationModels)
+    if #available(macOS 26, *) {
+        return SystemLanguageModel.default.supportedLanguages
+            .map { $0.minimalIdentifier }
+            .sorted()
+    }
+#endif
+#endif
+    return []
+}
