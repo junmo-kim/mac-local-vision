@@ -37,6 +37,22 @@ struct MapCallErrorTests {
         #expect(reason == "model_not_ready")
     }
 
+    @Test("safety model still loading → temporarilyUnavailable (exit 71 class)")
+    func contentSafetyModelNotReady() {
+        guard case .temporarilyUnavailable(let reason, _, _) =
+            AFMEngine.mapCallError(error("""
+                Error Domain=FoundationModels.LanguageModelSession.GenerationError Code=-1 \
+                UserInfo={NSMultipleUnderlyingErrorsKey=(
+                "Error Domain=com.apple.SensitiveContentAnalysisML Code=15 \
+                UserInfo={NSMultipleUnderlyingErrorsKey=(
+                "Error Domain=ModelManagerServices.ModelManagerError Code=1041 \"(null)\""
+                )}"
+                )}
+                """))
+        else { Issue.record("expected .temporarilyUnavailable"); return }
+        #expect(reason == "content_safety_model_not_ready")
+    }
+
     @Test("unmapped error → failed (exit 1 class), surfaces the raw message")
     func unmapped() {
         guard case .failed(let reason, let detail, _) =

@@ -212,6 +212,18 @@ public struct AFMEngine: SemanticEngine {
                 detail: "The model is still downloading.",
                 hint: "Retry shortly.")
         }
+        // Observed in practice (2026-07-11, macOS 27 Beta 26A5378j): right after the main
+        // generation model finishes downloading, calls can still fail because a secondary
+        // model — the guardrail/safety content sanitizer — hasn't finished loading yet.
+        // Confirmed transient: an identical call moments later succeeded. Surfaces as a
+        // deeply nested error whose innermost domains are ModelManagerError/
+        // SensitiveContentAnalysisML rather than anything matching the checks above.
+        if m.contains("modelmanagererror") || m.contains("sensitivecontentanalysis") {
+            return .temporarilyUnavailable(
+                reason: "content_safety_model_not_ready",
+                detail: "A secondary safety/guardrail model is still initializing.",
+                hint: "Retry shortly — this can happen right after Apple Intelligence finishes downloading the main model.")
+        }
         // Ran and failed for an unmapped reason (guardrail, context size, …). Surface the
         // real message rather than pretending to know — refine on the 27 SDK.
         return .failed(
