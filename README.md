@@ -10,7 +10,7 @@ No Node, no Python, no runtime dependencies: the OS *is* the dependency.
 
 - **Zero-Token OCR** — extract text/layout locally, never spending cloud vision tokens.
 - **Fast E2E targeting** — `find` returns the exact pixel center of a word for click/assert.
-- **On-device semantic `ask`** *(Beta)* — multimodal reasoning via Apple Foundation Models, verified end-to-end (macOS 27 Beta).
+- **On-device semantic `ask`** *(Beta)* — multimodal reasoning via Apple Foundation Models (macOS 27 Beta).
 - **Local face sorting** — cluster photos by person without uploading anything.
 
 ## Tiny & fast
@@ -29,6 +29,18 @@ process launch *plus* recognition, no daemon to keep warm:
 
 Versus shipping that screenshot to a cloud vision API: no network round-trip, no vision
 tokens, no per-call cost, and nothing leaves the machine.
+
+`ask` (multimodal LLM inference, needs macOS 27 (Beta) + Apple Intelligence) is a
+different kind of fast — still no cloud round-trip, but the cost is real generation
+time, not process launch:
+
+| prompt | latency |
+| --- | --- |
+| short prompt, simple image | **0.8 s** |
+| longer prompt, simple image | **3.0 s** |
+| complex real-world screenshot, detailed prompt | **6.8 s** |
+
+<sub>Small sample, MacMini-M4, macOS 27 Beta.</sub>
 
 ## Requirements
 
@@ -86,7 +98,7 @@ swift build -c release && cp .build/release/macvis /usr/local/bin/
 | `sort-faces` / `find-person` | ✅ working — same-session grouping; cross-time identity is approximate (see note) | Apple Silicon · macOS 26 |
 | `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/doctor as tools (+ask on macOS 27 builds) | macOS 26 |
 | `serve` | ✅ working — HTTP JSON-RPC MCP server for remote/non-Mac nodes | macOS 26 |
-| `ask` | 🟢 Beta — targets a pre-release Apple stack (macOS 27 Beta + Foundation Models multimodal). Built against the macOS 27 SDK with the call shape from Apple's official WWDC26 example; real on-device inference (including streaming, multilingual prompts, and complex real-world images) verified end-to-end on a macOS 27 Beta boot. Graduates from Beta as macOS 27 ships (see note). | macOS 27 (Beta) + Apple Intelligence |
+| `ask` | 🟢 Beta — targets a pre-release Apple stack; real end-to-end inference verified on a macOS 27 Beta boot (see note) | macOS 27 (Beta) + Apple Intelligence |
 
 > **`sort-faces` accuracy**: faces are grouped by an image feature print over the face
 > crop (Apple exposes no public face-embedding API). This reliably groups near-duplicate
@@ -94,20 +106,14 @@ swift build -c release && cp .build/release/macvis /usr/local/bin/
 > changes — tune `--threshold` (distances are in the output). Not a person-recognition DB.
 
 > **`ask` is Beta** because it rides on a pre-release Apple stack — macOS 27 (Beta) and the new
-> Foundation Models *multimodal* API, both still in beta. The call — `session.respond { prompt; Attachment(image) }` —
+> Foundation Models *multimodal* API. The call — `session.respond { prompt; Attachment(image) }` —
 > matches Apple's official [WWDC26 Foundation Models session](https://developer.apple.com/videos/play/wwdc2026/241/)
-> (which lists `CGImage` among the accepted inputs) and builds clean against the macOS 27 SDK. On a real
-> macOS 27 Beta boot, both the error path (Apple Intelligence off → structured
-> `apple_intelligence_not_enabled`, exit `71`) and real end-to-end inference are verified: accurate
-> answers on everything from simple images to complex real-world screenshots (small text, mixed-language
-> UI), full `--stream` output (not deltas), and **~1-7 s** latency depending on image complexity and
-> answer length. Once Apple Intelligence reports `available`, it isn't limited to the device's system
-> language — it answers fluently in whichever of its ~24 supported languages the prompt is written in
-> (`doctor`'s `ask_languages` reflects this: empty while unavailable, the full supported set once ready).
-> There's no flag to force a *response* language, though — Apple's API doesn't expose one, so `ask`
-> follows the prompt's language rather than a `--lang`-style override. Apple Intelligence itself is
-> gated to eligible, internal-boot installs, so `ask` tracks the platform: it graduates from Beta as
-> macOS 27 ships. The rest of macvis (`ocr` / `find` / `sort-faces` / `mcp`) is stable on macOS 26 today.
+> and builds against the macOS 27 SDK. On a real macOS 27 Beta boot, both the error path
+> (Apple Intelligence off → `apple_intelligence_not_enabled`, exit `71`) and real end-to-end
+> inference are verified: accurate answers, full `--stream` output (not deltas), and **~1-7 s**
+> latency depending on image complexity and answer length. Apple Intelligence itself is gated to
+> eligible, internal-boot installs, so `ask` tracks the platform: it graduates from Beta as macOS 27
+> ships. The rest of macvis (`ocr` / `find` / `sort-faces` / `mcp`) is stable on macOS 26 today.
 
 ## Build & test
 
@@ -178,7 +184,11 @@ ask_languages: []
 
 `ask_languages` mirrors `ask`'s own status — empty whenever `ask` itself is unavailable
 (including on macOS 26, where the text-only model can be ready while image-based `ask` isn't),
-and the full set of ~24 supported languages once `ask` reports `available`.
+and the full set of ~24 supported languages once `ask` reports `available`. Once ready, `ask`
+isn't limited to the device's system language — it answers fluently in whichever of those
+languages the prompt is written in. There's no flag to force a different *response* language,
+though: Apple's API doesn't expose one, so `ask` follows the prompt's language rather than a
+`--lang`-style override.
 
 ## Use from an LLM agent
 
