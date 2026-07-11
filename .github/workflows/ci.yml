@@ -17,6 +17,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Select Xcode 26.4.1
         uses: maxim-lobanov/setup-xcode@v1
@@ -31,6 +33,36 @@ jobs:
 
       - name: Test
         run: swift test
+
+      - name: Release notes generator smoke test
+        run: |
+          LATEST_TAG="$(git tag --sort=-v:refname | head -1)"
+          if [ -z "$LATEST_TAG" ]; then
+            echo "no tags yet — skipping"
+          else
+            OUT="$(scripts/gen-release-notes.sh "$LATEST_TAG")"
+            echo "$OUT"
+            echo "$OUT" | grep -qE "^## macvis ${LATEST_TAG}\$" || { echo "::error::missing title heading"; exit 1; }
+            echo "$OUT" | grep -q "What's Changed" || { echo "::error::missing What's Changed section"; exit 1; }
+          fi
+
+      - name: Release notes generator — decoy heading regression test
+        run: |
+          # Regression guard for a real bug: the keynote matcher must reject a
+          # near-miss CHANGELOG heading (e.g. "## v0X2X0" vs tag "v0.2.0"), not
+          # treat "." as an ERE wildcard and leak the wrong section.
+          TMPD="$(mktemp -d)"
+          mkdir -p "$TMPD/scripts"
+          cp scripts/gen-release-notes.sh "$TMPD/scripts/"
+          git -C "$TMPD" init -q
+          git -C "$TMPD" config user.email t@t.com
+          git -C "$TMPD" config user.name t
+          ( cd "$TMPD" && echo x > f.txt && git add f.txt && git commit -qm "feat: initial" && git tag v0.2.0 )
+          printf '# Changelog\n\n## v0X2X0\n\nDECOY\n' > "$TMPD/CHANGELOG.md"
+          OUT="$(cd "$TMPD" && bash scripts/gen-release-notes.sh v0.2.0)"
+          rm -rf "$TMPD"
+          echo "$OUT" | grep -q "DECOY" && { echo "::error::keynote matcher leaked a non-matching CHANGELOG heading"; exit 1; }
+          echo "ok: decoy heading correctly rejected"
 
       - name: Privacy guard (stay on-device — no networking APIs)
         run: |
