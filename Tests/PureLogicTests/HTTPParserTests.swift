@@ -1,118 +1,138 @@
-import XCTest
+import Testing
+import Foundation
 @testable import VisionCore
 
-final class HTTPParserTests: XCTestCase {
+@Suite("HTTPParser")
+struct HTTPParserTests {
 
     // MARK: - happy path
 
-    func testSimplePostRequest() throws {
+    @Test("simple POST request")
+    func simplePostRequest() throws {
         let body = "{\"method\":\"ping\"}"
         let raw = "POST /mcp HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\n\r\n\(body)"
         let req = try HTTPParser.parse(Data(raw.utf8))
-        XCTAssertEqual(req.method, "POST")
-        XCTAssertEqual(req.path, "/mcp")
-        XCTAssertEqual(req.headers["content-type"], "application/json")
-        XCTAssertEqual(req.headers["content-length"], "\(body.count)")
-        XCTAssertEqual(String(data: req.body, encoding: .utf8), body)
+        #expect(req.method == "POST")
+        #expect(req.path == "/mcp")
+        #expect(req.headers["content-type"] == "application/json")
+        #expect(req.headers["content-length"] == "\(body.count)")
+        #expect(String(data: req.body, encoding: .utf8) == body)
     }
 
-    func testGetRequestNoBody() throws {
+    @Test("GET request with no body")
+    func getRequestNoBody() throws {
         let raw = "GET /doctor HTTP/1.1\r\nHost: localhost:9090\r\n\r\n"
         let req = try HTTPParser.parse(Data(raw.utf8))
-        XCTAssertEqual(req.method, "GET")
-        XCTAssertEqual(req.path, "/doctor")
-        XCTAssertEqual(req.headers["host"], "localhost:9090")
-        XCTAssertTrue(req.body.isEmpty)
+        #expect(req.method == "GET")
+        #expect(req.path == "/doctor")
+        #expect(req.headers["host"] == "localhost:9090")
+        #expect(req.body.isEmpty)
     }
 
-    func testHeadersCaseNormalized() throws {
+    @Test("headers are case-normalized")
+    func headersCaseNormalized() throws {
         let raw = "GET / HTTP/1.1\r\nX-Custom-Header: Hello\r\nContent-Type: text/plain\r\n\r\n"
         let req = try HTTPParser.parse(Data(raw.utf8))
-        XCTAssertEqual(req.headers["x-custom-header"], "Hello")
-        XCTAssertEqual(req.headers["content-type"], "text/plain")
+        #expect(req.headers["x-custom-header"] == "Hello")
+        #expect(req.headers["content-type"] == "text/plain")
     }
 
-    func testBodyTrimmedToContentLength() throws {
+    @Test("body trimmed to Content-Length")
+    func bodyTrimmedToContentLength() throws {
         // Raw body has extra bytes; Content-Length says 3
         let raw = "POST /mcp HTTP/1.1\r\nContent-Length: 3\r\n\r\nhello"
         let req = try HTTPParser.parse(Data(raw.utf8))
-        XCTAssertEqual(String(data: req.body, encoding: .utf8), "hel")
+        #expect(String(data: req.body, encoding: .utf8) == "hel")
     }
 
-    func testLargeJsonBody() throws {
+    @Test("large JSON body")
+    func largeJsonBody() throws {
         let json = """
         {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ocr","arguments":{"path":"/tmp/test.png"}}}
         """
         let raw = "POST /mcp HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: \(json.utf8.count)\r\n\r\n\(json)"
         let req = try HTTPParser.parse(Data(raw.utf8))
-        XCTAssertEqual(req.method, "POST")
-        XCTAssertEqual(req.path, "/mcp")
-        XCTAssertEqual(String(data: req.body, encoding: .utf8), json)
+        #expect(req.method == "POST")
+        #expect(req.path == "/mcp")
+        #expect(String(data: req.body, encoding: .utf8) == json)
     }
 
     // MARK: - error cases
 
-    func testIncompleteHeaders() {
+    @Test("incomplete headers throw .incomplete")
+    func incompleteHeaders() {
         let raw = "POST /mcp HTTP/1.1\r\nContent-Type: application/json\r\n"
-        XCTAssertThrowsError(try HTTPParser.parse(Data(raw.utf8))) { err in
-            XCTAssertEqual(err as? HTTPParseError, .incomplete)
+        #expect(throws: HTTPParseError.incomplete) {
+            try HTTPParser.parse(Data(raw.utf8))
         }
     }
 
-    func testMalformedRequestLineOneWord() {
-        let raw = "BADLINE\r\n\r\n"
-        XCTAssertThrowsError(try HTTPParser.parse(Data(raw.utf8))) { err in
-            if case .malformed = err as? HTTPParseError {} else {
-                XCTFail("expected .malformed, got \(err)")
+    @Test("malformed request line (one word) throws .malformed")
+    func malformedRequestLineOneWord() {
+        do {
+            _ = try HTTPParser.parse(Data("BADLINE\r\n\r\n".utf8))
+            Issue.record("expected .malformed to be thrown")
+        } catch let error as HTTPParseError {
+            guard case .malformed = error else {
+                Issue.record("expected .malformed, got \(error)")
+                return
             }
+        } catch {
+            Issue.record("expected HTTPParseError, got \(error)")
         }
     }
 
-    func testEmptyData() {
-        XCTAssertThrowsError(try HTTPParser.parse(Data())) { err in
-            XCTAssertEqual(err as? HTTPParseError, .incomplete)
+    @Test("empty data throws .incomplete")
+    func emptyData() {
+        #expect(throws: HTTPParseError.incomplete) {
+            try HTTPParser.parse(Data())
         }
     }
 
-    func testNoContentLengthBodyIncluded() throws {
+    @Test("no Content-Length: body is everything after the separator")
+    func noContentLengthBodyIncluded() throws {
         // Without Content-Length, body is everything after the separator
         let raw = "POST /mcp HTTP/1.1\r\nHost: x\r\n\r\n{\"hello\":true}"
         let req = try HTTPParser.parse(Data(raw.utf8))
-        XCTAssertEqual(String(data: req.body, encoding: .utf8), "{\"hello\":true}")
+        #expect(String(data: req.body, encoding: .utf8) == "{\"hello\":true}")
     }
 
-    func testBodyShorterThanContentLength() throws {
+    @Test("body shorter than Content-Length is clamped to available bytes")
+    func bodyShorterThanContentLength() throws {
         // Parser silently clamps to available bytes; completeness checking belongs
         // to receiveHTTPRequest (the transport layer), not the parser.
         let raw = "POST /mcp HTTP/1.1\r\nContent-Length: 100\r\n\r\n{\"short"
         let req = try HTTPParser.parse(Data(raw.utf8))
-        XCTAssertLessThan(req.body.count, 100)
+        #expect(req.body.count < 100)
     }
 
-    func testNonNumericContentLengthBodyIncluded() throws {
+    @Test("non-numeric Content-Length is treated as absent")
+    func nonNumericContentLengthBodyIncluded() throws {
         // Non-numeric Content-Length is treated as absent — body is raw bytes after separator
         let raw = "POST /mcp HTTP/1.1\r\nContent-Length: ATTACK\r\n\r\nhello"
         let req = try HTTPParser.parse(Data(raw.utf8))
-        XCTAssertEqual(String(data: req.body, encoding: .utf8), "hello")
+        #expect(String(data: req.body, encoding: .utf8) == "hello")
     }
 
     // MARK: - guard: duplicate Content-Length
 
-    func testDuplicateContentLengthThrowsMalformed() {
+    @Test("duplicate Content-Length throws .malformed")
+    func duplicateContentLengthThrowsMalformed() {
         let raw = "POST /mcp HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 3\r\n\r\nhello"
-        XCTAssertThrowsError(try HTTPParser.parse(Data(raw.utf8))) { err in
-            XCTAssertEqual(err as? HTTPParseError, .malformed("duplicate Content-Length"))
+        #expect(throws: HTTPParseError.malformed("duplicate Content-Length")) {
+            try HTTPParser.parse(Data(raw.utf8))
         }
     }
 
     // MARK: - guard: header count cap
 
-    func testTooManyHeadersThrowsMalformed() {
+    @Test("too many headers throws .malformed")
+    func tooManyHeadersThrowsMalformed() {
         var raw = "POST /mcp HTTP/1.1\r\n"
         for i in 0..<200 { raw += "X-Flood-\(i): v\r\n" }
         raw += "\r\n"
-        XCTAssertThrowsError(try HTTPParser.parse(Data(raw.utf8))) { err in
-            XCTAssertEqual(err as? HTTPParseError, .malformed("too many header lines"))
+        #expect(throws: HTTPParseError.malformed("too many header lines")) {
+            try HTTPParser.parse(Data(raw.utf8))
         }
     }
 }
