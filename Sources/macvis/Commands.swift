@@ -67,6 +67,26 @@ enum FindCommand {
     }
 }
 
+// MARK: - barcode
+
+enum BarcodeCommand {
+    static func run(_ args: [String]) async throws -> Int32 {
+        if CLIHelp.wantsHelp(args) { return helpExit("barcode") }
+        let parsed = ArgParser.parse(args)
+        let format = try resolveFormat(parsed)
+        guard let path = parsed.firstPositional else {
+            throw CLIError(message: CLIHelp.usage(for: "barcode")!)
+        }
+        let req = VisionRequest(
+            op: "barcode", path: path,
+            minConfidence: try optDouble(parsed, "min-confidence"),
+            page: try optInt(parsed, "page"),
+            scale: try optDouble(parsed, "scale"),
+            symbologies: parsed.option("symbology").map { $0.split(separator: ",").map(String.init) })
+        return await runService(req, format: format)
+    }
+}
+
 // MARK: - ask
 
 enum AskCommand {

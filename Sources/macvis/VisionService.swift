@@ -12,9 +12,10 @@ enum VisionService {
         case "doctor": return ServiceResult(doctor())
         case "ask":    return try await ask(req)
         case "ping":   return ServiceResult(.dict([("ok", .bool(true))]))
+        case "barcode": return try barcode(req)
         default:
             throw ServiceError(name: "bad_request", reason: "unknown_op", detail: req.op,
-                               hint: "ops: ocr | find | doctor | ask", exitCode: ExitCode.usage.rawValue)
+                               hint: "ops: ocr | find | doctor | ask | barcode", exitCode: ExitCode.usage.rawValue)
         }
     }
 
@@ -102,6 +103,46 @@ enum VisionService {
         }
     }
 
+    // MARK: - barcode
+
+    static func barcode(_ req: VisionRequest) throws -> ServiceResult {
+        let input = try InputSource.resolve(path: req.path, data: req.data)
+        do {
+            let r: BarcodeScanResult
+            switch input {
+            case .path(let p):
+                r = try BarcodeEngine.detect(
+                    path: p, symbologies: req.symbologies ?? [],
+                    minConfidence: req.minConfidence ?? 0.0,
+                    page: req.page ?? 1, scale: req.scale ?? 2.0)
+            case .data(let d):
+                r = try BarcodeEngine.detect(
+                    data: d, symbologies: req.symbologies ?? [],
+                    minConfidence: req.minConfidence ?? 0.0,
+                    page: req.page ?? 1, scale: req.scale ?? 2.0)
+            }
+            // No barcode found is a valid outcome (not an error) — same semantics as `ocr`
+            // (whole-image scan), not `find` (single-target lookup): code_count: 0, exit 0.
+            let codes = r.codes.map { code -> YAMLValue in
+                .dict([
+                    ("payload", code.payload.map(YAMLValue.string) ?? .null),
+                    ("symbology", .string(code.symbologyName)),
+                    ("x", .int(code.rect.centerX)), ("y", .int(code.rect.centerY)),
+                    ("left", .int(code.rect.x)), ("top", .int(code.rect.y)),
+                    ("width", .int(code.rect.width)), ("height", .int(code.rect.height)),
+                    ("confidence", .double(code.confidence)),
+                ])
+            }
+            return ServiceResult(.dict([
+                ("image_width", .int(r.imageWidth)), ("image_height", .int(r.imageHeight)),
+                ("code_count", .int(r.codes.count)),
+                ("codes", .array(codes)),
+            ]))
+        } catch let e as VisionError {
+            throw imageError(e, label: input.label)
+        }
+    }
+
     // MARK: - doctor
 
     static func doctor() -> YAMLValue {
@@ -110,6 +151,7 @@ enum VisionService {
         func status(_ ok: Bool) -> YAMLValue { .string(ok ? "available" : "unavailable") }
         let text = status(OCREngine.textVisionAvailable())
         let face = status(OCREngine.faceVisionAvailable())
+        let barcodeStatus = status(BarcodeEngine.barcodeVisionAvailable())
         let askStatus: YAMLValue
         #if MACVIS_ASK_IMAGE
         switch probeAskAvailability() {
@@ -127,6 +169,7 @@ enum VisionService {
         let askLangs = readyAskLanguages().map { YAMLValue.string($0) }
         return .dict([
             ("ocr", text), ("find", text), ("sort-faces", face),
+            ("barcode", barcodeStatus),
             ("ask", askStatus), ("ocr_languages", .array(langs)),
             ("ask_languages", .array(askLangs)),
         ])

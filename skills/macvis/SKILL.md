@@ -3,11 +3,12 @@ name: macvis
 description: >
   On-device, zero-token vision for AI agents (mac-local-vision, macOS). Read text from an
   image / screenshot / PDF (OCR), find the exact click-pixel of a word for E2E/UI assertions,
-  group photos by face, or ask a question about an image. Apple Vision + Foundation Models,
-  fully on-device — no cloud, no vision tokens, ~0.3s per call. Reach for this whenever an
-  agent needs to read or locate something in a screenshot/image instead of sending it to a
-  cloud vision API. Triggers: read text from an image, OCR a screenshot/PDF, find a button's
-  pixel coordinates, click-point for E2E, assert text is on screen, on-device/local vision,
+  scan QR codes and barcodes, group photos by face, or ask a question about an image. Apple
+  Vision + Foundation Models, fully on-device — no cloud, no vision tokens, ~0.3s per call.
+  Reach for this whenever an agent needs to read or locate something in a screenshot/image
+  instead of sending it to a cloud vision API. Triggers: read text from an image, OCR a
+  screenshot/PDF, find a button's pixel coordinates, click-point for E2E, assert text is on
+  screen, scan a QR code, read a barcode, decode a barcode payload, on-device/local vision,
   sort photos by person. Apple Silicon + macOS 26+ (`ask` needs macOS 27).
 user_invocable: true
 ---
@@ -23,6 +24,7 @@ user_invocable: true
 | --- | --- |
 | Read all text from an image / screenshot / PDF | `macvis ocr <path>` |
 | The click-point `(x,y)` of a specific word — E2E / UI targeting | `macvis find <path> --target "<text>"` |
+| Scan a QR code or barcode (any symbology) | `macvis barcode <path>` |
 | To *interpret* an image (describe, reason, summarize) — macOS 27 | `macvis ask <path> --prompt "<question>"` |
 | Group photos by person | `macvis sort-faces <dir>` |
 | Find photos matching a given face | `macvis find-person --target <face.jpg> --dir <dir>` |
@@ -39,6 +41,7 @@ macvis ocr ./receipt.png --words --format json    # per-word pixel boxes, JSON
 macvis find ./screen.png --target "Submit"        # → x,y click center + bounding box
 macvis find ./screen.png --target "결제하기"        # non-Latin works (locale-aware)
 macvis ocr ./doc.pdf --page 2                      # PDF page (rasterized)
+macvis barcode ./ticket.png                        # scan every QR/barcode symbology
 macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photos by person
 ```
 
@@ -55,4 +58,4 @@ macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photo
 
 Full flags for any command live in `macvis <command> --help` (the canonical, code-generated
 reference). To drive it as a tool server instead of the CLI, run `macvis mcp` — same engine,
-exposes `ocr` / `find` / `doctor` (and `ask` on macOS 27 builds) as MCP tools.
+exposes `ocr` / `find` / `barcode` / `doctor` (and `ask` on macOS 27 builds) as MCP tools.

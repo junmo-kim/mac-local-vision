@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+Adds `macvis barcode` — scans QR codes and every 1D/2D barcode symbology Vision supports
+(Code128, EAN, PDF417, DataMatrix, Aztec, and more) in a single command, exposed on the CLI
+and as an MCP tool. No barcode found is a valid outcome (`code_count: 0`, exit `0`), matching
+`ocr`'s whole-image-scan semantics rather than `find`'s single-target lookup. Restrict to
+specific symbologies with `--symbology qr,code128,...`. Adds a `barcode` field to `doctor`.
+
 ## v0.2.1
 
 Fixes a real process crash in `ask` when Apple Intelligence isn't ready yet (SIGSEGV

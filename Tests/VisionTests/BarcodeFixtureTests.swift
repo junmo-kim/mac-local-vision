@@ -1,0 +1,152 @@
+#if canImport(Vision)
+import Testing
+import Foundation
+import CoreGraphics
+import CoreImage
+import ImageIO
+import UniformTypeIdentifiers
+@testable import VisionCore
+
+/// Tier ② (impl §2): exercise the real Vision barcode/QR path against CIFilter-rendered
+/// fixtures — no static image assets in the repo, mirroring `OCRFixtureTests.renderFixture`.
+@Suite("BarcodeEngine — fixture detection (Vision-bound)",
+       .enabled(if: ProcessInfo.processInfo.environment["CI"] == nil,
+                "Vision barcode detection needs a real session — hangs on headless CI runners; runs locally."))
+struct BarcodeFixtureTests {
+    static let ciContext = CIContext()
+
+    /// Render a QR code carrying `payload` to a unique temp PNG; returns its path.
+    /// Nearest-neighbor sampling before the scale-up keeps module edges crisp — bilinear
+    /// interpolation on a ~30px native QR image would blur modules past Vision's read threshold.
+    static func renderQRFixture(_ payload: String, moduleScale: CGFloat = 12) -> String {
+        let filter = CIFilter(name: "CIQRCodeGenerator")!
+        filter.setValue(Data(payload.utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        let output = filter.outputImage!.samplingNearest()
+            .transformed(by: CGAffineTransform(scaleX: moduleScale, y: moduleScale))
+        return writePNG(output)
+    }
+
+    /// Render a Code128 1D barcode carrying `payload` to a unique temp PNG.
+    static func renderCode128Fixture(_ payload: String, scale: CGFloat = 4) -> String {
+        let filter = CIFilter(name: "CICode128BarcodeGenerator")!
+        filter.setValue(Data(payload.utf8), forKey: "inputMessage")
+        let output = filter.outputImage!.samplingNearest()
+            .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        return writePNG(output)
+    }
+
+    /// A blank white image with no barcode of any kind.
+    static func renderBlankFixture(width: Int = 200, height: Int = 200) -> String {
+        let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                            bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let path = NSTemporaryDirectory() + "macvis-barcode-fixture-\(UUID().uuidString).png"
+        let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: path) as CFURL,
+                                                   UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(dest, ctx.makeImage()!, nil)
+        CGImageDestinationFinalize(dest)
+        return path
+    }
+
+    static func writePNG(_ image: CIImage) -> String {
+        let cgImage = ciContext.createCGImage(image, from: image.extent)!
+        let path = NSTemporaryDirectory() + "macvis-barcode-fixture-\(UUID().uuidString).png"
+        let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: path) as CFURL,
+                                                   UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(dest, cgImage, nil)
+        CGImageDestinationFinalize(dest)
+        return path
+    }
+
+    @Test("detect reads a rendered QR payload back and reports physical dimensions")
+    func detectsQR() throws {
+        let payload = "https://example.com/ticket/abc123"
+        let path = Self.renderQRFixture(payload)
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let result = try BarcodeEngine.detect(path: path)
+        #expect(result.codes.count == 1)
+        let code = try #require(result.codes.first)
+        #expect(code.payload == payload)
+        #expect(code.symbologyName == "qr")
+        #expect(code.confidence > 0)
+        #expect(result.imageWidth > 0 && result.imageHeight > 0)
+    }
+
+    @Test("detect reads a rendered Code128 payload back")
+    func detectsCode128() throws {
+        let payload = "ABC12345"
+        let path = Self.renderCode128Fixture(payload)
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let result = try BarcodeEngine.detect(path: path)
+        #expect(result.codes.count == 1)
+        let code = try #require(result.codes.first)
+        #expect(code.payload == payload)
+        #expect(code.symbologyName == "code128")
+    }
+
+    @Test("code_count is 0 (not an error) when no barcode is present")
+    func noBarcodeIsEmptyNotError() throws {
+        let path = Self.renderBlankFixture()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let result = try BarcodeEngine.detect(path: path)
+        #expect(result.codes.isEmpty)
+        #expect(result.imageWidth == 200 && result.imageHeight == 200)
+    }
+
+    @Test("--symbology filter narrows detection to the requested symbologies")
+    func symbologyFilterNarrowsResults() throws {
+        let path = Self.renderCode128Fixture("FILTERED1")
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        // Restricting to qr must not find the code128 barcode present in the image.
+        let filtered = try BarcodeEngine.detect(path: path, symbologies: ["qr"])
+        #expect(filtered.codes.isEmpty)
+        // Restricting to code128 (the actual symbology) still finds it.
+        let matched = try BarcodeEngine.detect(path: path, symbologies: ["code128"])
+        #expect(matched.codes.count == 1)
+    }
+
+    @Test("an unknown --symbology name throws bad_request/unknown_symbology")
+    func unknownSymbologyThrows() throws {
+        let path = Self.renderQRFixture("irrelevant")
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        do {
+            _ = try BarcodeEngine.detect(path: path, symbologies: ["not-a-real-symbology"])
+            Issue.record("expected throw")
+        } catch {
+            let se = error as? ServiceError
+            #expect(se?.reason == "unknown_symbology")
+        }
+    }
+
+    // MARK: - data (base64) path — same logic, in-memory instead of disk
+
+    @Test("detect(data:) reads the same QR payload as detect(path:)")
+    func detectsFromData() throws {
+        let payload = "DataPathQR"
+        let path = Self.renderQRFixture(payload)
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let result = try BarcodeEngine.detect(data: data)
+        #expect(result.codes.count == 1)
+        #expect(result.codes.first?.payload == payload)
+    }
+
+    @Test("loading a missing file throws imageLoadFailed")
+    func missingFileThrows() {
+        #expect(throws: VisionError.self) {
+            _ = try BarcodeEngine.detect(path: "/no/such/file.png")
+        }
+    }
+
+    @Test("garbage bytes → imageLoadFailed (not valid raster or PDF)")
+    func garbageDataThrows() {
+        let garbage = Data(repeating: 0xAB, count: 64)
+        #expect(throws: VisionError.self) {
+            _ = try BarcodeEngine.detect(data: garbage)
+        }
+    }
+}
+#endif

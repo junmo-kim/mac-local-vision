@@ -3,7 +3,7 @@ import Foundation
 /// The request contract shared by the CLI and the MCP server. A request fully
 /// describes one operation; optional fields default at the service layer.
 public struct VisionRequest: Codable, Sendable {
-    public var op: String              // ocr | find | doctor | ask | ping
+    public var op: String              // ocr | find | doctor | ask | ping | barcode
     public var path: String?
     public var data: String?           // base64-encoded image/PDF — alternative to path for remote callers
     public var target: String?
@@ -17,17 +17,20 @@ public struct VisionRequest: Codable, Sendable {
     public var page: Int?
     public var scale: Double?
     public var format: String?         // yaml | json — output rendering
+    public var symbologies: [String]?  // barcode: restrict to these symbologies (empty/nil = all)
 
     public init(op: String, path: String? = nil, data: String? = nil,
                 target: String? = nil, prompt: String? = nil,
                 fast: Bool? = nil, words: Bool? = nil, boxes: Bool? = nil, stream: Bool? = nil,
                 minConfidence: Double? = nil, languages: [String]? = nil,
-                page: Int? = nil, scale: Double? = nil, format: String? = nil) {
+                page: Int? = nil, scale: Double? = nil, format: String? = nil,
+                symbologies: [String]? = nil) {
         self.op = op; self.path = path; self.data = data
         self.target = target; self.prompt = prompt
         self.fast = fast; self.words = words; self.boxes = boxes; self.stream = stream
         self.minConfidence = minConfidence; self.languages = languages
         self.page = page; self.scale = scale; self.format = format
+        self.symbologies = symbologies
     }
 }
 

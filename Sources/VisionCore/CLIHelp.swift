@@ -13,6 +13,7 @@ public enum CLIHelp {
     private static let usages: [String: String] = [
         "ocr": "usage: macvis ocr <image|pdf> [--boxes] [--words] [--fast] [--min-confidence N] [--lang ko,en] [--page N] [--scale S] [--format yaml|json]",
         "find": "usage: macvis find <image|pdf> --target <text> [--min-confidence N] [--lang ko,en] [--page N] [--scale S] [--format yaml|json]",
+        "barcode": "usage: macvis barcode <image|pdf> [--symbology qr,code128,...] [--min-confidence N] [--page N] [--scale S] [--format yaml|json]",
         "ask": "usage: macvis ask <image|pdf> --prompt <text> [--stream] [--page N] [--scale S] [--format yaml|json]   (Beta — needs macOS 27)",
         "sort-faces": "usage: macvis sort-faces <dir> [--output-dir DIR] [--threshold F] [--format yaml|json]",
         "find-person": "usage: macvis find-person --target <image> [--dir DIR] [--threshold F] [--format yaml|json]",

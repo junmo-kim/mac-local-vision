@@ -10,6 +10,7 @@ No Node, no Python, no runtime dependencies: the OS *is* the dependency.
 
 - **Zero-Token OCR** — extract text/layout locally, never spending cloud vision tokens.
 - **Fast E2E targeting** — `find` returns the exact pixel center of a word for click/assert.
+- **QR/barcode scanning** — `barcode` decodes every symbology Vision supports (QR, Code128, EAN, PDF417, ...) in one call.
 - **On-device semantic `ask`** *(Beta)* — multimodal reasoning via Apple Foundation Models (macOS 27 Beta).
 - **Local face sorting** — cluster photos by person without uploading anything.
 
@@ -94,9 +95,10 @@ swift build -c release && cp .build/release/macvis /usr/local/bin/
 | Command | State | Requires |
 | --- | --- | --- |
 | `ocr` / `find` | ✅ working | Apple Silicon · macOS 26 |
+| `barcode` | ✅ working — QR + every Vision-supported 1D/2D symbology in one command | Apple Silicon · macOS 26 |
 | `doctor` | ✅ working | macOS 26 |
 | `sort-faces` / `find-person` | ✅ working — same-session grouping; cross-time identity is approximate (see note) | Apple Silicon · macOS 26 |
-| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/doctor as tools (+ask on macOS 27 builds) | macOS 26 |
+| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/doctor as tools (+ask on macOS 27 builds) | macOS 26 |
 | `serve` | ✅ working — HTTP JSON-RPC MCP server for remote/non-Mac nodes | macOS 26 |
 | `ask` | 🟢 Beta — targets a pre-release Apple stack; real end-to-end inference verified on a macOS 27 Beta boot (see note) | macOS 27 (Beta) + Apple Intelligence |
 
@@ -132,6 +134,7 @@ swift test                   # pure logic + ask plumbing + Vision OCR fixtures
 macvis ocr ./receipt.png                                # extract text
 macvis find ./screen.png --target "Submit"              # pixel center of a word
 macvis find ./screen.png --target "결제하기"             # non-Latin works too (locale-aware)
+macvis barcode ./ticket.png                              # scan every QR/barcode symbology
 macvis ask ./design.png --prompt "main theme color?"    # Beta — needs macOS 27 (Beta)
 macvis doctor                                           # which modes work here
 ```
@@ -167,6 +170,30 @@ $ macvis find ./screen.png --target "Settings" --format json
 {"found":true,"x":126,"y":69,"left":38,"top":48,"width":176,"height":42,"confidence":1,"text_found":"Settings"}
 ```
 
+`barcode` scans every QR/barcode symbology in one call (no separate `qr` command) and returns
+each code's payload, symbology, and pixel box; `code_count: 0` (not an error, exit `0`) when
+none are found:
+
+```yaml
+$ macvis barcode ./ticket.png
+image_width: 1080
+image_height: 2400
+code_count: 1
+codes:
+  - payload: "https://example.com/ticket/abc123"
+    symbology: qr
+    x: 512
+    y: 300
+    left: 480
+    top: 270
+    width: 64
+    height: 64
+    confidence: 1
+```
+
+Restrict to specific symbologies with `--symbology qr,code128` (comma-separated); an unknown
+symbology name is a structured `bad_request`/`unknown_symbology` error, exit `64`.
+
 `doctor` reports what runs here, plus the locale-derived OCR languages and (once `ask` is
 available) which languages it's ready to answer in right now:
 
@@ -175,6 +202,7 @@ $ macvis doctor
 ocr: available
 find: available
 sort-faces: available
+barcode: available
 ask: "unavailable: needs_macos_27_sdk"
 ocr_languages:
   - ko-KR
@@ -194,7 +222,7 @@ though: Apple's API doesn't expose one, so `ask` follows the prompt's language r
 
 Two equivalent integrations — both run the same `VisionService` engine, so the output is identical.
 
-**MCP server (stdio)** — `macvis mcp` speaks stdio JSON-RPC and exposes `ocr` / `find` / `doctor` as tools
+**MCP server (stdio)** — `macvis mcp` speaks stdio JSON-RPC and exposes `ocr` / `find` / `barcode` / `doctor` as tools
 (plus `ask` when the binary is built with the macOS 27 multimodal path):
 
 ```json
