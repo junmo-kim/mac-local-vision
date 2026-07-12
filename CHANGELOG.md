@@ -8,6 +8,16 @@ and as an MCP tool. No barcode found is a valid outcome (`code_count: 0`, exit `
 `ocr`'s whole-image-scan semantics rather than `find`'s single-target lookup. Restrict to
 specific symbologies with `--symbology qr,code128,...`. Adds a `barcode` field to `doctor`.
 
+Adds `macvis make-qr <text>` — the write counterpart to `barcode`, encoding text into a
+scannable QR code PNG via CoreImage (`CIQRCodeGenerator`), not Vision, so it works regardless
+of Vision/Apple Intelligence availability. `--out <path>` writes a file and reports its path
+plus dimensions; omitting it returns the PNG as base64 in `image_data` for remote/MCP callers
+without local filesystem access. `--correction-level L|M|Q|H` (default `M`) and `--size N`
+(per-module pixel magnification, default `10`) are configurable. Exposed as an MCP tool
+alongside `ocr`/`find`/`barcode`/`doctor`. Verified round-trip: every generated code is
+re-scanned through `macvis barcode`'s own `BarcodeEngine.detect` and checked for exact
+payload equality.
+
 ## v0.2.1
 
 Fixes a real process crash in `ask` when Apple Intelligence isn't ready yet (SIGSEGV

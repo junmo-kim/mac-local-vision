@@ -6,10 +6,11 @@ description: >
   scan QR codes and barcodes, group photos by face, or ask a question about an image. Apple
   Vision + Foundation Models, fully on-device — no cloud, no vision tokens, ~0.3s per call.
   Reach for this whenever an agent needs to read or locate something in a screenshot/image
-  instead of sending it to a cloud vision API. Triggers: read text from an image, OCR a
-  screenshot/PDF, find a button's pixel coordinates, click-point for E2E, assert text is on
-  screen, scan a QR code, read a barcode, decode a barcode payload, on-device/local vision,
-  sort photos by person. Apple Silicon + macOS 26+ (`ask` needs macOS 27).
+  instead of sending it to a cloud vision API, or needs to generate a QR code. Triggers: read
+  text from an image, OCR a screenshot/PDF, find a button's pixel coordinates, click-point for
+  E2E, assert text is on screen, scan a QR code, read a barcode, decode a barcode payload,
+  generate a QR code, create a QR code image, on-device/local vision, sort photos by person.
+  Apple Silicon + macOS 26+ (`ask` needs macOS 27).
 user_invocable: true
 ---
 
@@ -25,6 +26,7 @@ user_invocable: true
 | Read all text from an image / screenshot / PDF | `macvis ocr <path>` |
 | The click-point `(x,y)` of a specific word — E2E / UI targeting | `macvis find <path> --target "<text>"` |
 | Scan a QR code or barcode (any symbology) | `macvis barcode <path>` |
+| Generate a scannable QR code PNG | `macvis make-qr "<text>" --out <path>` |
 | To *interpret* an image (describe, reason, summarize) — macOS 27 | `macvis ask <path> --prompt "<question>"` |
 | Group photos by person | `macvis sort-faces <dir>` |
 | Find photos matching a given face | `macvis find-person --target <face.jpg> --dir <dir>` |
@@ -42,6 +44,7 @@ macvis find ./screen.png --target "Submit"        # → x,y click center + bound
 macvis find ./screen.png --target "결제하기"        # non-Latin works (locale-aware)
 macvis ocr ./doc.pdf --page 2                      # PDF page (rasterized)
 macvis barcode ./ticket.png                        # scan every QR/barcode symbology
+macvis make-qr "https://example.com" --out ./qr.png  # write a scannable QR PNG
 macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photos by person
 ```
 
@@ -58,4 +61,4 @@ macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photo
 
 Full flags for any command live in `macvis <command> --help` (the canonical, code-generated
 reference). To drive it as a tool server instead of the CLI, run `macvis mcp` — same engine,
-exposes `ocr` / `find` / `barcode` / `doctor` (and `ask` on macOS 27 builds) as MCP tools.
+exposes `ocr` / `find` / `barcode` / `make-qr` / `doctor` (and `ask` on macOS 27 builds) as MCP tools.
