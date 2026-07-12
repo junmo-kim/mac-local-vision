@@ -127,7 +127,7 @@ enum MCPTools {
         // Capability-matched: only advertise `ask` when this binary was built with the
         // macOS 27 multimodal path. `request(for:)` still maps a direct `ask` call on any
         // build (→ structured needs_macos_27 error, not a bare "unknown tool").
-        var tools: [[String: Any]] = [ocr, find, barcode, doctor]
+        var tools: [[String: Any]] = [ocr, find, barcode, makeQR, doctor]
         #if MACVIS_ASK_IMAGE
         tools.append(ask)
         #endif
@@ -232,6 +232,35 @@ enum MCPTools {
         ]
     }
 
+    static var makeQR: [String: Any] {
+        [
+            "name": "make-qr",
+            "description": """
+            Generate a scannable QR code PNG encoding `text` — the write counterpart to \
+            `barcode`'s read. Built on CoreImage (CIQRCodeGenerator), not Vision, so it works \
+            on any Mac regardless of Vision/Apple Intelligence availability. Give `outPath` to \
+            write a PNG on this machine and get back its path plus dimensions; omit it (e.g. \
+            for remote/MCP callers without local filesystem access) to get the PNG back as \
+            base64 in `image_data` instead. Higher `correctionLevel` (L < M < Q < H) survives \
+            more damage/obstruction at the cost of a denser code for the same payload; default \
+            M. `size` is the per-module pixel magnification, not the overall image side length \
+            — the response's `width`/`height` report the image actually produced, since module \
+            count depends on payload length and correction level.
+            """,
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "text": ["type": "string", "description": "The text to encode into the QR code."],
+                    "outPath": ["type": "string", "description": "Local file path to write the PNG to. Omit to receive image_data (base64) instead."],
+                    "correctionLevel": ["type": "string", "enum": ["L", "M", "Q", "H"], "description": "Error-correction level. Default M."],
+                    "size": ["type": "integer", "description": "Per-module pixel magnification. Default 10."],
+                    "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
+                ],
+                "required": ["text"],
+            ],
+        ]
+    }
+
     static var doctor: [String: Any] {
         [
             "name": "doctor",
@@ -298,6 +327,12 @@ enum MCPTools {
                 minConfidence: number(args["minConfidence"]),
                 page: int(args["page"]), scale: number(args["scale"]),
                 symbologies: args["symbologies"] as? [String])
+        case "make-qr":
+            return VisionRequest(
+                op: "make-qr", text: args["text"] as? String,
+                outPath: args["outPath"] as? String,
+                correctionLevel: args["correctionLevel"] as? String,
+                size: int(args["size"]))
         case "doctor":
             return VisionRequest(op: "doctor")
         default:

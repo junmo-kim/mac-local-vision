@@ -19,11 +19,14 @@ func printUsage() {
       sort-faces <dir>            Cluster photos by person          [--output-dir DIR] [--threshold F]
       find-person --target FACE   Index photos matching a face      [--dir DIR] [--threshold F]
 
+    GENERATION COMMAND (CoreImage, no Vision/Apple Intelligence needed):
+      make-qr <text>          Generate a scannable QR code PNG  [--out PATH] [--correction-level L|M|Q|H] [--size N] [--format yaml|json]
+
     SEMANTIC COMMAND (Beta — needs macOS 27 (Beta) + an Apple-Intelligence-eligible Mac):
       ask <image> --prompt P      On-device multimodal reasoning (Beta)  [--stream] [--format yaml|json]
 
     AGENT INTERFACE:
-      mcp                         MCP server over stdio (JSON-RPC) — ocr/find/barcode/doctor tools (+ask on macOS 27 builds)
+      mcp                         MCP server over stdio (JSON-RPC) — ocr/find/barcode/make-qr/doctor tools (+ask on macOS 27 builds)
       serve [--host H] [--port N] HTTP MCP server for remote nodes — default 0.0.0.0:9090
 
     UTILITY:
@@ -50,6 +53,7 @@ func dispatch(_ args: [String]) async -> Int32 {
         case "ocr":                    return try await OCRCommand.run(rest)
         case "find":                   return try await FindCommand.run(rest)
         case "barcode":                return try await BarcodeCommand.run(rest)
+        case "make-qr":            return try await MakeQRCommand.run(rest)
         case "ask":                    return try await AskCommand.run(rest)
         case "sort-faces", "find-person": return try FacesCommand.run(sub, rest)
         case "doctor":                 return await DoctorCommand.run(rest)

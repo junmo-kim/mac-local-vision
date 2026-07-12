@@ -87,6 +87,25 @@ enum BarcodeCommand {
     }
 }
 
+// MARK: - make-qr
+
+enum MakeQRCommand {
+    static func run(_ args: [String]) async throws -> Int32 {
+        if CLIHelp.wantsHelp(args) { return helpExit("make-qr") }
+        let parsed = ArgParser.parse(args)
+        let format = try resolveFormat(parsed)
+        guard let text = parsed.firstPositional else {
+            throw CLIError(message: CLIHelp.usage(for: "make-qr")!)
+        }
+        let req = VisionRequest(
+            op: "make-qr", text: text,
+            outPath: parsed.option("out"),
+            correctionLevel: parsed.option("correction-level"),
+            size: try optInt(parsed, "size"))
+        return await runService(req, format: format)
+    }
+}
+
 // MARK: - ask
 
 enum AskCommand {
