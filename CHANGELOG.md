@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+Adds `macvis classify` — tags an image or PDF against Vision's 1,303-label taxonomy
+(`VNClassifyImageRequestRevision2`), exposed on the CLI and as an MCP tool. Unlike
+`barcode`/`ocr`, Vision scores all 1,303 labels for every image rather than returning only
+detections, so the engine applies `--min-confidence` (default `0.1`) and `--top` (default
+`20`, clamped to a minimum of `1`) itself before returning anything — otherwise every call
+would be a 1,303-line response. `label_count: 0` (all below threshold) is a valid outcome,
+not an error, matching `barcode`'s `code_count: 0` semantics. Adds a `classify` field to
+`doctor`.
+
 Adds `macvis document-ocr <image|pdf>` — structured document OCR via `RecognizeDocumentsRequest`,
 extracting a title, full text, paragraphs, tables (row/column grid with per-cell text), and lists
 (marker + item text), each with a pixel bounding box. Nested alongside `ocr`, not replacing it:

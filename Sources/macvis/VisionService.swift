@@ -18,9 +18,10 @@ enum VisionService {
         case "document-bounds": return try documentBounds(req)
         case "rectify-document": return try rectifyDocument(req)
         case "document-ocr": return try await documentOCR(req)
+        case "classify": return try await classify(req)
         default:
             throw ServiceError(name: "bad_request", reason: "unknown_op", detail: req.op,
-                               hint: "ops: ocr | find | doctor | ask | barcode | qr | make-qr | document-bounds | rectify-document | document-ocr",
+                               hint: "ops: ocr | find | doctor | ask | barcode | qr | make-qr | document-bounds | rectify-document | document-ocr | classify",
                                exitCode: ExitCode.usage.rawValue)
         }
     }
@@ -326,6 +327,43 @@ enum VisionService {
         }
     }
 
+    // MARK: - classify
+
+    /// Unlike `barcode`/`ocr`, Vision returns all 1,303 taxonomy identifiers for every
+    /// image (not just detections — plan §2.6 Phase 0 spike), so `ClassifyEngine` applies
+    /// `minConfidence`/`top` itself; this handler just passes them through and shapes the
+    /// response. `label_count: 0` (all below threshold) is a valid outcome, same as
+    /// `code_count: 0` for `barcode` — not an error.
+    static func classify(_ req: VisionRequest) async throws -> ServiceResult {
+        let input = try InputSource.resolve(path: req.path, data: req.data)
+        do {
+            let r: ClassificationScanResult
+            switch input {
+            case .path(let p):
+                r = try await ClassifyEngine.classify(
+                    path: p, minConfidence: req.minConfidence ?? ClassifyEngine.defaultMinConfidence,
+                    top: req.top)
+            case .data(let d):
+                r = try await ClassifyEngine.classify(
+                    data: d, minConfidence: req.minConfidence ?? ClassifyEngine.defaultMinConfidence,
+                    top: req.top)
+            }
+            let labels = r.labels.map { label -> YAMLValue in
+                .dict([
+                    ("identifier", .string(label.identifier)),
+                    ("confidence", .double(label.confidence)),
+                ])
+            }
+            return ServiceResult(.dict([
+                ("image_width", .int(r.imageWidth)), ("image_height", .int(r.imageHeight)),
+                ("label_count", .int(r.labels.count)),
+                ("labels", .array(labels)),
+            ]))
+        } catch let e as VisionError {
+            throw imageError(e, label: input.label)
+        }
+    }
+
     // MARK: - doctor
 
     static func doctor() async -> YAMLValue {
@@ -341,6 +379,7 @@ enum VisionService {
         // as `qr` not getting its own doctor entry alongside `barcode`).
         let documentStatus = status(DocumentEngine.documentVisionAvailable())
         let documentOCRStatus = status(await DocumentOCREngine.documentOCRAvailable())
+        let classifyStatus = status(await ClassifyEngine.classifyVisionAvailable())
         let askStatus: YAMLValue
         #if MACVIS_ASK_IMAGE
         switch probeAskAvailability() {
@@ -358,7 +397,7 @@ enum VisionService {
         let askLangs = readyAskLanguages().map { YAMLValue.string($0) }
         return .dict([
             ("ocr", text), ("find", text), ("sort-faces", face),
-            ("barcode", barcodeStatus),
+            ("barcode", barcodeStatus), ("classify", classifyStatus),
             ("document_bounds", documentStatus),
             ("document_ocr", documentOCRStatus),
             ("ask", askStatus), ("ocr_languages", .array(langs)),

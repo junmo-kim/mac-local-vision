@@ -14,6 +14,7 @@ No Node, no Python, no runtime dependencies: the OS *is* the dependency.
 - **QR generation** — `make-qr` writes a scannable QR code PNG (CoreImage, no Vision needed).
 - **Document rectification** — `rectify-document` finds a photographed document's boundary and flattens it into a straightened, top-down scan; `document-bounds` returns just the four corners.
 - **Structured document OCR** — `document-ocr` extracts title/paragraphs/tables/lists with layout preserved, not just flat lines of text.
+- **Image classification** — `classify` tags an image against a 1,303-label taxonomy (outdoor, document, people, ...).
 - **On-device semantic `ask`** *(Beta)* — multimodal reasoning via Apple Foundation Models (macOS 27 Beta).
 - **Local face sorting** — cluster photos by person without uploading anything.
 
@@ -100,13 +101,15 @@ swift build -c release && cp .build/release/macvis /usr/local/bin/
 | `ocr` / `find` | ✅ working | Apple Silicon · macOS 26 |
 | `barcode` | ✅ working — QR + every Vision-supported 1D/2D symbology in one command | Apple Silicon · macOS 26 |
 | `qr` | ✅ working — `barcode` restricted to QR only, server-side (no `--symbology` flag) | Apple Silicon · macOS 26 |
+| `classify` | ✅ working — 1,303-label taxonomy; Vision scores every label, so `--min-confidence`/`--top` are applied by the engine, not just a pass-through filter (see note) | Apple Silicon · macOS 26 |
 | `make-qr` | ✅ working — CoreImage, no Vision needed; round-trips through `barcode`/`qr` | any Mac · macOS 26 |
 | `document-bounds` | ✅ working — finds a document's 4 corners (`VNDetectDocumentSegmentationRequest`) | Apple Silicon · macOS 26 |
 | `rectify-document` | ✅ working — detects + perspective-corrects a photographed document into a flattened scan; round-trips through `ocr` | Apple Silicon · macOS 26 |
 | `document-ocr` | ✅ working — structured OCR (title/paragraphs/tables/lists), nested alongside plain-text `ocr` | Apple Silicon · macOS 26 |
+| `classify` | ✅ working — tags an image against Vision's 1,303-label taxonomy | Apple Silicon · macOS 26 |
 | `doctor` | ✅ working | macOS 26 |
 | `sort-faces` / `find-person` | ✅ working — same-session grouping; cross-time identity is approximate (see note) | Apple Silicon · macOS 26 |
-| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/qr/make-qr/document-bounds/rectify-document/document-ocr/doctor as tools (+ask on macOS 27 builds) | macOS 26 |
+| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/qr/classify/make-qr/document-bounds/rectify-document/document-ocr/doctor as tools (+ask on macOS 27 builds) | macOS 26 |
 | `serve` | ✅ working — HTTP JSON-RPC MCP server for remote/non-Mac nodes | macOS 26 |
 | `ask` | 🟢 Beta — targets a pre-release Apple stack; real end-to-end inference verified on a macOS 27 Beta boot (see note) | macOS 27 (Beta) + Apple Intelligence |
 
@@ -114,6 +117,14 @@ swift build -c release && cp .build/release/macvis /usr/local/bin/
 > crop (Apple exposes no public face-embedding API). This reliably groups near-duplicate
 > / same-session faces, but is a weak identity signal across large pose/lighting/age
 > changes — tune `--threshold` (distances are in the output). Not a person-recognition DB.
+
+> **`classify` result shape**: unlike `barcode`/`ocr`, Vision doesn't return "only what it
+> detected" here — `VNClassifyImageRequest` scores all 1,303 taxonomy labels for every
+> image, most near-zero. `classify` applies `--min-confidence` (default `0.1`) and `--top`
+> (default `20`, min `1`) itself before returning anything, or every call would be a
+> 1,303-line response. Real photos produce a handful of much higher-confidence labels;
+> flat/synthetic (non-photographic) images tend to score everything near zero —
+> `label_count: 0` is a valid outcome (not an error), same as `barcode`'s `code_count: 0`.
 
 > **`ask` is Beta** because it rides on a pre-release Apple stack — macOS 27 (Beta) and the new
 > Foundation Models *multimodal* API. The call — `session.respond { prompt; Attachment(image) }` —
@@ -144,6 +155,7 @@ macvis find ./screen.png --target "Submit"              # pixel center of a word
 macvis find ./screen.png --target "결제하기"             # non-Latin works too (locale-aware)
 macvis barcode ./ticket.png                              # scan every QR/barcode symbology
 macvis qr ./ticket.png                                   # scan for QR codes only
+macvis classify ./photo.jpg                              # tag against a 1,303-label taxonomy
 macvis make-qr "https://example.com" --out ./qr.png     # write a scannable QR PNG
 macvis document-bounds ./receipt.jpg                     # find a document's 4 corners
 macvis rectify-document ./receipt.jpg --out ./flat.png  # flatten a photographed document
@@ -225,6 +237,33 @@ codes:
     height: 64
     confidence: 1
 ```
+
+`classify` tags an image against Vision's 1,303-label taxonomy — labels are unlocalized
+technical identifiers (not meant for direct UI display), sorted by confidence descending.
+`label_count: 0` (not an error) when nothing clears `--min-confidence`:
+
+```yaml
+$ macvis classify ./beach-photo.jpg
+image_width: 3000
+image_height: 4000
+label_count: 6
+labels:
+  - identifier: people
+    confidence: 0.9566
+  - identifier: outdoor
+    confidence: 0.9483
+  - identifier: sky
+    confidence: 0.9482
+  - identifier: blue_sky
+    confidence: 0.9482
+  - identifier: child
+    confidence: 0.8843
+  - identifier: adult
+    confidence: 0.873
+```
+
+`--min-confidence N` (default `0.1`) drops labels below that confidence; `--top N` (default
+`20`, clamped to a minimum of `1`) caps how many are returned, highest confidence first.
 
 `make-qr` is the write counterpart to `barcode`/`qr` — it encodes text into a scannable QR PNG
 via CoreImage (`CIQRCodeGenerator`), not Vision, so it works on any Mac regardless of
@@ -332,6 +371,7 @@ ocr: available
 find: available
 sort-faces: available
 barcode: available
+classify: available
 document_bounds: available
 document_ocr: available
 ask: "unavailable: needs_macos_27_sdk"
@@ -354,8 +394,8 @@ though: Apple's API doesn't expose one, so `ask` follows the prompt's language r
 Two equivalent integrations — both run the same `VisionService` engine, so the output is identical.
 
 **MCP server (stdio)** — `macvis mcp` speaks stdio JSON-RPC and exposes `ocr` / `find` / `barcode` /
-`qr` / `make-qr` / `document-bounds` / `rectify-document` / `document-ocr` / `doctor` as tools
-(plus `ask` when the binary is built with the macOS 27 multimodal path):
+`qr` / `classify` / `make-qr` / `document-bounds` / `rectify-document` / `document-ocr` / `doctor`
+as tools (plus `ask` when the binary is built with the macOS 27 multimodal path):
 
 ```json
 { "mcpServers": { "mac-vision": { "command": "/path/to/macvis", "args": ["mcp"] } } }

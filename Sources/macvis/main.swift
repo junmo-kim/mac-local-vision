@@ -19,6 +19,7 @@ func printUsage() {
       qr <image|pdf>              Scan for QR codes only            [--min-confidence N] [--page N] [--scale S] [--format yaml|json]
       document-bounds <image|pdf> Find a document's 4 corners       [--min-confidence N] [--page N] [--scale S] [--format yaml|json]
       document-ocr <image|pdf>    Structured OCR (title/paragraphs/tables/lists) [--page N] [--scale S] [--format yaml|json]
+      classify <image|pdf>        Tag an image (1,303-label taxonomy) [--min-confidence N (default 0.1)] [--top N (default 20)] [--page N] [--scale S] [--format yaml|json]
       sort-faces <dir>            Cluster photos by person          [--output-dir DIR] [--threshold F]
       find-person --target FACE   Index photos matching a face      [--dir DIR] [--threshold F]
 
@@ -30,7 +31,7 @@ func printUsage() {
       ask <image> --prompt P      On-device multimodal reasoning (Beta)  [--stream] [--format yaml|json]
 
     AGENT INTERFACE:
-      mcp                         MCP server over stdio (JSON-RPC) — ocr/find/barcode/qr/make-qr/document-bounds/rectify-document/document-ocr/doctor tools (+ask on macOS 27 builds)
+      mcp                         MCP server over stdio (JSON-RPC) — ocr/find/barcode/qr/classify/make-qr/document-bounds/rectify-document/document-ocr/doctor tools (+ask on macOS 27 builds)
       serve [--host H] [--port N] HTTP MCP server for remote nodes — default 0.0.0.0:9090
 
     UTILITY:
@@ -58,6 +59,7 @@ func dispatch(_ args: [String]) async -> Int32 {
         case "find":                   return try await FindCommand.run(rest)
         case "barcode":                return try await BarcodeCommand.run(rest)
         case "qr":                     return try await QRCommand.run(rest)
+        case "classify":               return try await ClassifyCommand.run(rest)
         case "make-qr":                return try await MakeQRCommand.run(rest)
         case "document-bounds":        return try await DocumentBoundsCommand.run(rest)
         case "rectify-document":       return try await RectifyDocumentCommand.run(rest)

@@ -130,6 +130,24 @@ enum QRCommand {
     }
 }
 
+// MARK: - classify
+
+enum ClassifyCommand {
+    static func run(_ args: [String]) async throws -> Int32 {
+        if CLIHelp.wantsHelp(args) { return helpExit("classify") }
+        let parsed = ArgParser.parse(args)
+        let format = try resolveFormat(parsed)
+        guard let path = parsed.firstPositional else {
+            throw CLIError(message: CLIHelp.usage(for: "classify")!)
+        }
+        let req = VisionRequest(
+            op: "classify", path: path,
+            minConfidence: try optDouble(parsed, "min-confidence"),
+            top: try optInt(parsed, "top"))
+        return await runService(req, format: format)
+    }
+}
+
 // MARK: - make-qr
 
 enum MakeQRCommand {

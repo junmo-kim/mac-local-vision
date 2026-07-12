@@ -3,7 +3,7 @@ import Foundation
 /// The request contract shared by the CLI and the MCP server. A request fully
 /// describes one operation; optional fields default at the service layer.
 public struct VisionRequest: Codable, Sendable {
-    public var op: String              // ocr | find | doctor | ask | ping | barcode | qr | make-qr | document-bounds | rectify-document
+    public var op: String              // ocr | find | doctor | ask | ping | barcode | qr | make-qr | document-bounds | rectify-document | document-ocr | classify
     public var path: String?
     public var data: String?           // base64-encoded image/PDF — alternative to path for remote callers
     public var target: String?
@@ -25,6 +25,7 @@ public struct VisionRequest: Codable, Sendable {
     public var outPath: String?
     public var correctionLevel: String? // make-qr: L | M | Q | H (default M)
     public var size: Int?              // make-qr: per-module pixel magnification (default 10)
+    public var top: Int?               // classify: max labels to return (default 20 — see ClassifyEngine)
 
     public init(op: String, path: String? = nil, data: String? = nil,
                 target: String? = nil, prompt: String? = nil,
@@ -32,7 +33,7 @@ public struct VisionRequest: Codable, Sendable {
                 minConfidence: Double? = nil, languages: [String]? = nil,
                 page: Int? = nil, scale: Double? = nil, format: String? = nil,
                 symbologies: [String]? = nil, text: String? = nil, outPath: String? = nil,
-                correctionLevel: String? = nil, size: Int? = nil) {
+                correctionLevel: String? = nil, size: Int? = nil, top: Int? = nil) {
         self.op = op; self.path = path; self.data = data
         self.target = target; self.prompt = prompt
         self.fast = fast; self.words = words; self.boxes = boxes; self.stream = stream
@@ -41,6 +42,7 @@ public struct VisionRequest: Codable, Sendable {
         self.symbologies = symbologies
         self.text = text; self.outPath = outPath
         self.correctionLevel = correctionLevel; self.size = size
+        self.top = top
     }
 }
 

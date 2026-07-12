@@ -3,14 +3,15 @@ name: macvis
 description: >
   On-device, zero-token vision for AI agents (mac-local-vision, macOS). Read text from an
   image / screenshot / PDF (OCR), find the exact click-pixel of a word for E2E/UI assertions,
-  scan QR codes and barcodes, group photos by face, flatten a photographed document, extract a
-  document's structured layout, or ask a question about an image. Apple Vision + Foundation
-  Models, fully on-device — no cloud, no vision tokens, ~0.3s per call. Reach for this whenever
-  an agent needs to read or locate something in a screenshot/image instead of sending it to a
-  cloud vision API, or needs to generate a QR code or straighten a photographed document/receipt.
-  Triggers: read text from an image, OCR a screenshot/PDF, find a button's pixel coordinates,
-  click-point for E2E, assert text is on screen, scan a QR code, read a barcode, decode a barcode
-  payload, generate a QR code, create a QR code image, find a document's corners,
+  scan QR codes and barcodes, tag/classify an image, group photos by face, flatten a
+  photographed document, extract a document's structured layout, or ask a question about an
+  image. Apple Vision + Foundation Models, fully on-device — no cloud, no vision tokens, ~0.3s
+  per call. Reach for this whenever an agent needs to read or locate something in a
+  screenshot/image instead of sending it to a cloud vision API, or needs to generate a QR code
+  or straighten a photographed document/receipt. Triggers: read text from an image, OCR a
+  screenshot/PDF, find a button's pixel coordinates, click-point for E2E, assert text is on
+  screen, scan a QR code, read a barcode, decode a barcode payload, generate a QR code, create
+  a QR code image, classify/tag an image, what's in this image, find a document's corners,
   flatten/straighten/scan a photographed document or receipt, perspective-correct an image,
   extract a table from an image, parse a document's structure, read a receipt/invoice layout,
   on-device/local vision, sort photos by person. Apple Silicon + macOS 26+ (`ask` needs macOS 27).
@@ -30,6 +31,7 @@ user_invocable: true
 | The click-point `(x,y)` of a specific word — E2E / UI targeting | `macvis find <path> --target "<text>"` |
 | Scan a QR code or barcode (any symbology) | `macvis barcode <path>` |
 | Scan for a QR code only (skip other symbologies) | `macvis qr <path>` |
+| Tag/classify what an image contains (labels, not free text) | `macvis classify <path>` |
 | Generate a scannable QR code PNG | `macvis make-qr "<text>" --out <path>` |
 | Find a document's four corners in a photo | `macvis document-bounds <path>` |
 | Flatten/straighten a photographed document into a scan | `macvis rectify-document <path> --out <path>` |
@@ -53,6 +55,7 @@ macvis find ./screen.png --target "결제하기"        # non-Latin works (local
 macvis ocr ./doc.pdf --page 2                      # PDF page (rasterized)
 macvis barcode ./ticket.png                        # scan every QR/barcode symbology
 macvis qr ./ticket.png                             # scan for a QR code only
+macvis classify ./photo.jpg                        # tag against a 1,303-label taxonomy
 macvis make-qr "https://example.com" --out ./qr.png  # write a scannable QR PNG
 macvis document-bounds ./receipt.jpg                  # find a document's 4 corners
 macvis rectify-document ./receipt.jpg --out ./flat.png # flatten a photographed document
@@ -71,7 +74,13 @@ macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photo
 - Recognition languages auto-detect from the system locale; override with `--lang ko-KR,en-US`.
 - `find` filters at `--min-confidence 0.3` by default (`ocr` keeps everything); lower it for blurry/headless renders.
 
+`classify` scores an image against Vision's 1,303-label taxonomy (identifiers are
+unlocalized technical names, e.g. `outdoor`/`document`/`people` — not meant for direct UI
+display). Vision scores every label for every image, so results are filtered by
+`--min-confidence` (default `0.1`) and capped by `--top` (default `20`) before they come
+back; `label_count: 0` is a valid outcome (not an error), same as `barcode`'s `code_count: 0`.
+
 Full flags for any command live in `macvis <command> --help` (the canonical, code-generated
 reference). To drive it as a tool server instead of the CLI, run `macvis mcp` — same engine,
-exposes `ocr` / `find` / `barcode` / `qr` / `make-qr` / `document-bounds` / `rectify-document` /
-`document-ocr` / `doctor` (and `ask` on macOS 27 builds) as MCP tools.
+exposes `ocr` / `find` / `barcode` / `qr` / `classify` / `make-qr` / `document-bounds` /
+`rectify-document` / `document-ocr` / `doctor` (and `ask` on macOS 27 builds) as MCP tools.

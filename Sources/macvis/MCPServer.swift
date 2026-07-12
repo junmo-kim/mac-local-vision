@@ -127,7 +127,7 @@ enum MCPTools {
         // Capability-matched: only advertise `ask` when this binary was built with the
         // macOS 27 multimodal path. `request(for:)` still maps a direct `ask` call on any
         // build (→ structured needs_macos_27 error, not a bare "unknown tool").
-        var tools: [[String: Any]] = [ocr, find, barcode, qr, makeQR, documentBounds, rectifyDocument, documentOCR, doctor]
+        var tools: [[String: Any]] = [ocr, find, barcode, qr, classify, makeQR, documentBounds, rectifyDocument, documentOCR, doctor]
         #if MACVIS_ASK_IMAGE
         tools.append(ask)
         #endif
@@ -254,6 +254,39 @@ enum MCPTools {
                     "minConfidence": ["type": "number", "description": "Drop results below this confidence (0..1). Default 0."],
                     "page": ["type": "integer", "description": "PDF page, 1-based. Default 1."],
                     "scale": ["type": "number", "description": "PDF rasterization scale (2.0 ≈ 144 dpi). Default 2.0."],
+                    "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
+                ],
+                // `required` intentionally omitted — same path/data XOR as `ocr` (see its comment).
+            ],
+        ]
+    }
+
+    static var classify: [String: Any] {
+        [
+            "name": "classify",
+            "description": """
+            Tag an image or PDF against Vision's 1,303-label taxonomy (e.g. "outdoor", \
+            "document", "people") — zero-token, on-device, no cloud. Unlike `barcode`, \
+            Vision internally scores every one of the 1,303 labels for every image, so \
+            this tool applies `minConfidence` and `top` itself before returning results; \
+            `label_count: 0` (all below threshold) is a valid outcome, not an error. \
+            Identifiers are unlocalized technical names, not meant for direct UI display — \
+            use them for tagging/routing/filtering, not user-facing text. Confidence \
+            reflects how strongly Vision associates the label, not real-world certainty: \
+            synthetic/non-photographic images (screenshots of flat color, generated \
+            graphics) tend to score every label near 0, while real photos produce a small \
+            number of much higher-confidence labels. Use `ocr`/`find` for reading text, \
+            `barcode`/`qr` for codes — use `classify` when you need a quick semantic gist \
+            of what an image contains. Remote callers (non-Mac nodes): send the image as \
+            base64 in the `data` field instead of `path`.
+            """,
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "path": ["type": "string", "description": "Path to an image (png/jpg/heic/tiff/...) or a PDF. Required if `data` is not provided."],
+                    "data": ["type": "string", "description": "Base64-encoded image or PDF for remote (non-Mac) callers. Required if `path` is not provided. Takes precedence over `path` when both are supplied."],
+                    "minConfidence": ["type": "number", "description": "Drop labels below this confidence (0..1). Default 0.1 — Vision scores all 1,303 labels for every image, most near 0, so a low default would flood the response."],
+                    "top": ["type": "integer", "description": "Maximum number of labels to return, highest confidence first. Default 20. Clamped to a minimum of 1."],
                     "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
                 ],
                 // `required` intentionally omitted — same path/data XOR as `ocr` (see its comment).
@@ -456,6 +489,11 @@ enum MCPTools {
             return VisionRequest(
                 op: "document-ocr", path: args["path"] as? String, data: args["data"] as? String,
                 page: int(args["page"]), scale: number(args["scale"]))
+        case "classify":
+            return VisionRequest(
+                op: "classify", path: args["path"] as? String, data: args["data"] as? String,
+                minConfidence: number(args["minConfidence"]),
+                top: int(args["top"]))
         case "make-qr":
             return VisionRequest(
                 op: "make-qr", text: args["text"] as? String,
