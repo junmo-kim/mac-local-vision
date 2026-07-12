@@ -139,7 +139,7 @@ macvis find ./screen.png --target "Submit"              # pixel center of a word
 macvis find ./screen.png --target "결제하기"             # non-Latin works too (locale-aware)
 macvis barcode ./ticket.png                              # scan every QR/barcode symbology
 macvis qr ./ticket.png                                   # scan for QR codes only
-macvis make-qr "https://example.com" --out ./qr.png # write a scannable QR PNG
+macvis make-qr "https://example.com" --out ./qr.png     # write a scannable QR PNG
 macvis ask ./design.png --prompt "main theme color?"    # Beta — needs macOS 27 (Beta)
 macvis doctor                                           # which modes work here
 ```
