@@ -20,7 +20,7 @@ func printUsage() {
       find-person --target FACE   Index photos matching a face      [--dir DIR] [--threshold F]
 
     GENERATION COMMAND (CoreImage, no Vision/Apple Intelligence needed):
-      make-qr <text>          Generate a scannable QR code PNG  [--out PATH] [--correction-level L|M|Q|H] [--size N] [--format yaml|json]
+      make-qr <text>               Generate a scannable QR code PNG  [--out PATH] [--correction-level L|M|Q|H] [--size N (px/module)] [--format yaml|json]
 
     SEMANTIC COMMAND (Beta — needs macOS 27 (Beta) + an Apple-Intelligence-eligible Mac):
       ask <image> --prompt P      On-device multimodal reasoning (Beta)  [--stream] [--format yaml|json]

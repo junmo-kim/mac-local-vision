@@ -56,4 +56,26 @@ struct QRGeneratorPureTests {
         #expect(large.width == small.width * 2)
         #expect(large.height == small.height * 2)
     }
+
+    @Test("an oversized --size throws bad_request/size_too_large instead of allocating a huge image")
+    func sizeTooLargeThrows() {
+        do {
+            _ = try QRGenerator.generate(text: "size-cap-check", size: 20_000)
+            Issue.record("expected throw")
+        } catch {
+            let se = error as? ServiceError
+            #expect(se?.name == "bad_request")
+            #expect(se?.reason == "size_too_large")
+        }
+    }
+
+    @Test("a comfortably large but reasonable size still succeeds (no over-eager clamp)")
+    func largeButReasonableSizeSucceeds() throws {
+        // ~21x21 modules for a short payload (version 1/M) at size:300 -> 6300x6300px
+        // (~39.7MP), comfortably below the 100MP raster cap — confirms the new guard
+        // doesn't reject ordinary (if generous) --size values, only pathological ones.
+        let result = try QRGenerator.generate(text: "boundary-check", size: 300)
+        #expect(result.width > 0 && result.height > 0)
+    }
+
 }

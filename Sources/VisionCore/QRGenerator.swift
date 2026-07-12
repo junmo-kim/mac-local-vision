@@ -61,6 +61,25 @@ public enum QRGenerator {
                                exitCode: ExitCode.runtimeError.rawValue)
         }
 
+        // Reject before rasterizing rather than after: `moduleScale` only floors at 1 above,
+        // and module count grows with payload length/correction level, so `size * moduleCount`
+        // can produce an arbitrarily large image (17920x17920px/5.6MB observed from a ~90-char
+        // URL at --size 512) — the same "unbounded width*height*4-byte allocation (local DoS)"
+        // class OCREngine.clampedRasterSize already guards against for decode, reusing its cap
+        // (OCREngine.maxRasterPixels, ~100MP/400MB) so generation and decoding share one limit.
+        // `nativeOutput.extent` is cheap (a CIImage graph, not yet rendered), so this check runs
+        // before any real allocation happens. Float math (not Int) avoids an overflow trap for
+        // pathological --size values.
+        let nativeExtent = nativeOutput.extent
+        let projectedWidth = nativeExtent.width * CGFloat(moduleScale)
+        let projectedHeight = nativeExtent.height * CGFloat(moduleScale)
+        guard projectedWidth.isFinite, projectedHeight.isFinite,
+              projectedWidth * projectedHeight <= CGFloat(OCREngine.maxRasterPixels) else {
+            throw ServiceError(name: "bad_request", reason: "size_too_large", detail: "\(moduleScale)",
+                               hint: "reduce --size or payload length; the generated image would exceed the \(OCREngine.maxRasterPixels)-pixel raster cap",
+                               exitCode: ExitCode.usage.rawValue)
+        }
+
         // Nearest-neighbor sampling before the scale-up keeps module edges crisp — bilinear
         // interpolation on the native ~1px/module QR image would blur modules past the
         // detector's read threshold (see BarcodeFixtureTests.renderQRFixture, the origin of
