@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+Adds `macvis document-ocr <image|pdf>` — structured document OCR via `RecognizeDocumentsRequest`,
+extracting a title, full text, paragraphs, tables (row/column grid with per-cell text), and lists
+(marker + item text), each with a pixel bounding box. Nested alongside `ocr`, not replacing it:
+`ocr` stays the lightweight flat-line-of-text path, `document-ocr` is for when the document's
+layout (which cells belong to which row, which lines form one list) matters. Tables/lists nested
+inside a cell or list item are flattened to their text only (no recursion). `--page N --scale S`
+rasterize PDF pages, matching `ocr`/`barcode`. Adds a `document_ocr` field to `doctor` and exposes
+`document-ocr` as an MCP tool alongside `ocr`/`find`/`barcode`/`qr`/`make-qr`/`doctor`.
+
 Adds `macvis barcode` — scans QR codes and every 1D/2D barcode symbology Vision supports
 (Code128, EAN, PDF417, DataMatrix, Aztec, and more) in a single command, exposed on the CLI
 and as an MCP tool. No barcode found is a valid outcome (`code_count: 0`, exit `0`), matching

@@ -87,6 +87,28 @@ enum BarcodeCommand {
     }
 }
 
+// MARK: - document-ocr
+
+/// Structured document OCR — `RecognizeDocumentsRequest` (title/paragraphs/tables/lists),
+/// nested alongside `ocr`'s plain-text path (VisionService.documentOCR). `run` is `async`
+/// like `AskCommand` (not `throws`-only sync like `OCRCommand`): the underlying engine call
+/// is `async throws`, driven through the same `runService` seam as every other command.
+enum DocumentOCRCommand {
+    static func run(_ args: [String]) async throws -> Int32 {
+        if CLIHelp.wantsHelp(args) { return helpExit("document-ocr") }
+        let parsed = ArgParser.parse(args)
+        let format = try resolveFormat(parsed)
+        guard let path = parsed.firstPositional else {
+            throw CLIError(message: CLIHelp.usage(for: "document-ocr")!)
+        }
+        let req = VisionRequest(
+            op: "document-ocr", path: path,
+            page: try optInt(parsed, "page"),
+            scale: try optDouble(parsed, "scale"))
+        return await runService(req, format: format)
+    }
+}
+
 // MARK: - qr
 
 /// `barcode` restricted to QR only, server-side (see VisionService.qr) — deliberately has

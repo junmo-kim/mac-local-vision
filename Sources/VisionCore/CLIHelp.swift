@@ -14,6 +14,7 @@ public enum CLIHelp {
         "ocr": "usage: macvis ocr <image|pdf> [--boxes] [--words] [--fast] [--min-confidence N] [--lang ko,en] [--page N] [--scale S] [--format yaml|json]",
         "find": "usage: macvis find <image|pdf> --target <text> [--min-confidence N] [--lang ko,en] [--page N] [--scale S] [--format yaml|json]",
         "barcode": "usage: macvis barcode <image|pdf> [--symbology qr,code128,...] [--min-confidence N] [--page N] [--scale S] [--format yaml|json]",
+        "document-ocr": "usage: macvis document-ocr <image|pdf> [--page N] [--scale S] [--format yaml|json]   (structured: title/paragraphs/tables/lists)",
         "qr": "usage: macvis qr <image|pdf> [--min-confidence N] [--page N] [--scale S] [--format yaml|json]   (barcode restricted to QR only; not configurable)",
         "make-qr": "usage: macvis make-qr <text> [--out <path>] [--correction-level L|M|Q|H] [--size N (px/module)] [--format yaml|json]",
         "document-bounds": "usage: macvis document-bounds <image|pdf> [--min-confidence N] [--page N] [--scale S] [--format yaml|json]",

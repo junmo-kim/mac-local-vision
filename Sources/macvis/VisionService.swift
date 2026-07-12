@@ -9,7 +9,7 @@ enum VisionService {
         switch req.op {
         case "ocr":    return try ocr(req)
         case "find":   return try find(req)
-        case "doctor": return ServiceResult(doctor())
+        case "doctor": return ServiceResult(await doctor())
         case "ask":    return try await ask(req)
         case "ping":   return ServiceResult(.dict([("ok", .bool(true))]))
         case "barcode": return try barcode(req)
@@ -17,9 +17,10 @@ enum VisionService {
         case "make-qr": return try generateQR(req)
         case "document-bounds": return try documentBounds(req)
         case "rectify-document": return try rectifyDocument(req)
+        case "document-ocr": return try await documentOCR(req)
         default:
             throw ServiceError(name: "bad_request", reason: "unknown_op", detail: req.op,
-                               hint: "ops: ocr | find | doctor | ask | barcode | qr | make-qr | document-bounds | rectify-document",
+                               hint: "ops: ocr | find | doctor | ask | barcode | qr | make-qr | document-bounds | rectify-document | document-ocr",
                                exitCode: ExitCode.usage.rawValue)
         }
     }
@@ -272,9 +273,62 @@ enum VisionService {
         }
     }
 
+    // MARK: - document-ocr
+
+    /// `RecognizeDocumentsRequest` (macOS 26.0+, Swift-native async API — see
+    /// `DocumentOCREngine`'s doc comment) rather than `OCREngine`'s synchronous
+    /// `VNRecognizeTextRequest`. Nested alongside `ocr`, not replacing it: `ocr` stays the
+    /// lightweight plain-text path, this is the structured (title/paragraphs/tables/lists)
+    /// path (plan §2.4).
+    static func documentOCR(_ req: VisionRequest) async throws -> ServiceResult {
+        let input = try InputSource.resolve(path: req.path, data: req.data)
+        do {
+            let r: DocumentOCRResult
+            switch input {
+            case .path(let p):
+                r = try await DocumentOCREngine.recognize(path: p, page: req.page ?? 1, scale: req.scale ?? 2.0)
+            case .data(let d):
+                r = try await DocumentOCREngine.recognize(data: d, page: req.page ?? 1, scale: req.scale ?? 2.0)
+            }
+            let w = r.imageWidth, h = r.imageHeight
+            let paragraphs = r.paragraphs.map { p -> YAMLValue in
+                .dict([("text", .string(p.text))] + boxFields(p.rect, w, h))
+            }
+            let tables = r.tables.map { t -> YAMLValue in
+                let cells = t.cells.map { cell -> YAMLValue in
+                    .dict([("row", .int(cell.row)), ("col", .int(cell.col)), ("text", .string(cell.text))])
+                }
+                return .dict([("rows", .int(t.rows)), ("columns", .int(t.columns))]
+                    + boxFields(t.rect, w, h)
+                    + [("cells", .array(cells))])
+            }
+            let lists = r.lists.map { l -> YAMLValue in
+                let items = l.items.map { item -> YAMLValue in
+                    .dict([("marker", .string(item.marker)), ("text", .string(item.text))])
+                }
+                return .dict([("item_count", .int(l.items.count))]
+                    + boxFields(l.rect, w, h)
+                    + [("items", .array(items))])
+            }
+            return ServiceResult(.dict([
+                ("image_width", .int(w)), ("image_height", .int(h)),
+                ("title", r.title.map(YAMLValue.string) ?? .null),
+                ("text", .string(r.text)),
+                ("paragraph_count", .int(r.paragraphs.count)),
+                ("paragraphs", .array(paragraphs)),
+                ("table_count", .int(r.tables.count)),
+                ("tables", .array(tables)),
+                ("list_count", .int(r.lists.count)),
+                ("lists", .array(lists)),
+            ]))
+        } catch let e as VisionError {
+            throw imageError(e, label: input.label)
+        }
+    }
+
     // MARK: - doctor
 
-    static func doctor() -> YAMLValue {
+    static func doctor() async -> YAMLValue {
         // Real probes, not hardcoded constants — and per request family, since text and
         // face recognition have independent availability.
         func status(_ ok: Bool) -> YAMLValue { .string(ok ? "available" : "unavailable") }
@@ -286,6 +340,7 @@ enum VisionService {
         // plan §2.3 — so this single Vision probe is representative of both, same precedent
         // as `qr` not getting its own doctor entry alongside `barcode`).
         let documentStatus = status(DocumentEngine.documentVisionAvailable())
+        let documentOCRStatus = status(await DocumentOCREngine.documentOCRAvailable())
         let askStatus: YAMLValue
         #if MACVIS_ASK_IMAGE
         switch probeAskAvailability() {
@@ -305,6 +360,7 @@ enum VisionService {
             ("ocr", text), ("find", text), ("sort-faces", face),
             ("barcode", barcodeStatus),
             ("document_bounds", documentStatus),
+            ("document_ocr", documentOCRStatus),
             ("ask", askStatus), ("ocr_languages", .array(langs)),
             ("ask_languages", .array(askLangs)),
         ])

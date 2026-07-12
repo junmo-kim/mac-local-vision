@@ -13,6 +13,7 @@ No Node, no Python, no runtime dependencies: the OS *is* the dependency.
 - **QR/barcode scanning** — `barcode` decodes every symbology Vision supports (QR, Code128, EAN, PDF417, ...) in one call.
 - **QR generation** — `make-qr` writes a scannable QR code PNG (CoreImage, no Vision needed).
 - **Document rectification** — `rectify-document` finds a photographed document's boundary and flattens it into a straightened, top-down scan; `document-bounds` returns just the four corners.
+- **Structured document OCR** — `document-ocr` extracts title/paragraphs/tables/lists with layout preserved, not just flat lines of text.
 - **On-device semantic `ask`** *(Beta)* — multimodal reasoning via Apple Foundation Models (macOS 27 Beta).
 - **Local face sorting** — cluster photos by person without uploading anything.
 
@@ -102,9 +103,10 @@ swift build -c release && cp .build/release/macvis /usr/local/bin/
 | `make-qr` | ✅ working — CoreImage, no Vision needed; round-trips through `barcode`/`qr` | any Mac · macOS 26 |
 | `document-bounds` | ✅ working — finds a document's 4 corners (`VNDetectDocumentSegmentationRequest`) | Apple Silicon · macOS 26 |
 | `rectify-document` | ✅ working — detects + perspective-corrects a photographed document into a flattened scan; round-trips through `ocr` | Apple Silicon · macOS 26 |
+| `document-ocr` | ✅ working — structured OCR (title/paragraphs/tables/lists), nested alongside plain-text `ocr` | Apple Silicon · macOS 26 |
 | `doctor` | ✅ working | macOS 26 |
 | `sort-faces` / `find-person` | ✅ working — same-session grouping; cross-time identity is approximate (see note) | Apple Silicon · macOS 26 |
-| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/qr/make-qr/document-bounds/rectify-document/doctor as tools (+ask on macOS 27 builds) | macOS 26 |
+| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/qr/make-qr/document-bounds/rectify-document/document-ocr/doctor as tools (+ask on macOS 27 builds) | macOS 26 |
 | `serve` | ✅ working — HTTP JSON-RPC MCP server for remote/non-Mac nodes | macOS 26 |
 | `ask` | 🟢 Beta — targets a pre-release Apple stack; real end-to-end inference verified on a macOS 27 Beta boot (see note) | macOS 27 (Beta) + Apple Intelligence |
 
@@ -145,6 +147,7 @@ macvis qr ./ticket.png                                   # scan for QR codes onl
 macvis make-qr "https://example.com" --out ./qr.png     # write a scannable QR PNG
 macvis document-bounds ./receipt.jpg                     # find a document's 4 corners
 macvis rectify-document ./receipt.jpg --out ./flat.png  # flatten a photographed document
+macvis document-ocr ./invoice.png                        # title/paragraphs/tables/lists, structured
 macvis ask ./design.png --prompt "main theme color?"    # Beta — needs macOS 27 (Beta)
 macvis doctor                                           # which modes work here
 ```
@@ -275,6 +278,51 @@ width: 960
 height: 1310
 ```
 
+`document-ocr` extracts a document's layout — title, full text, paragraphs, tables (row/column
+grid with per-cell text), and lists (marker + item text) — each with a pixel bounding box, unlike
+`ocr`'s flat lines. Use `ocr` when you only need plain text; reach for `document-ocr` when the
+structure (which cells belong to which row, which lines form one list) matters:
+
+```yaml
+$ macvis document-ocr ./invoice.png
+image_width: 1080
+image_height: 1400
+title: "Invoice #1234"
+text: "Invoice #1234\nBill to: Acme Corp\nItem\nPrice\n..."
+paragraph_count: 2
+paragraphs:
+  - text: "Bill to: Acme Corp"
+    x: 190
+    y: 72
+    left: 40
+    top: 60
+    width: 300
+    height: 24
+table_count: 1
+tables:
+  - rows: 3
+    columns: 2
+    x: 300
+    y: 220
+    left: 40
+    top: 120
+    width: 500
+    height: 200
+    cells:
+      - row: 0
+        col: 0
+        text: Item
+      - row: 0
+        col: 1
+        text: Price
+      # ...
+list_count: 0
+lists: []
+```
+
+Nested tables/lists inside a cell or list item are flattened to text only, not walked
+recursively (MVP scope). `--page N --scale S` rasterize PDF pages, same as `ocr`/`barcode`.
+
 `doctor` reports what runs here, plus the locale-derived OCR languages and (once `ask` is
 available) which languages it's ready to answer in right now:
 
@@ -285,6 +333,7 @@ find: available
 sort-faces: available
 barcode: available
 document_bounds: available
+document_ocr: available
 ask: "unavailable: needs_macos_27_sdk"
 ocr_languages:
   - ko-KR
@@ -305,8 +354,8 @@ though: Apple's API doesn't expose one, so `ask` follows the prompt's language r
 Two equivalent integrations — both run the same `VisionService` engine, so the output is identical.
 
 **MCP server (stdio)** — `macvis mcp` speaks stdio JSON-RPC and exposes `ocr` / `find` / `barcode` /
-`qr` / `make-qr` / `document-bounds` / `rectify-document` / `doctor` as tools (plus `ask` when the
-binary is built with the macOS 27 multimodal path):
+`qr` / `make-qr` / `document-bounds` / `rectify-document` / `document-ocr` / `doctor` as tools
+(plus `ask` when the binary is built with the macOS 27 multimodal path):
 
 ```json
 { "mcpServers": { "mac-vision": { "command": "/path/to/macvis", "args": ["mcp"] } } }

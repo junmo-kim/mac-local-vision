@@ -127,7 +127,7 @@ enum MCPTools {
         // Capability-matched: only advertise `ask` when this binary was built with the
         // macOS 27 multimodal path. `request(for:)` still maps a direct `ask` call on any
         // build (→ structured needs_macos_27 error, not a bare "unknown tool").
-        var tools: [[String: Any]] = [ocr, find, barcode, qr, makeQR, documentBounds, rectifyDocument, doctor]
+        var tools: [[String: Any]] = [ocr, find, barcode, qr, makeQR, documentBounds, rectifyDocument, documentOCR, doctor]
         #if MACVIS_ASK_IMAGE
         tools.append(ask)
         #endif
@@ -352,6 +352,35 @@ enum MCPTools {
         ]
     }
 
+    static var documentOCR: [String: Any] {
+        [
+            "name": "document-ocr",
+            "description": """
+            Structured document OCR: extract an image or PDF's title, full text, paragraphs, \
+            tables (row/column grid with per-cell text), and lists (marker + item text) — each \
+            with a pixel bounding box. Use this instead of `ocr` when you need the document's \
+            layout (which cells belong to which row/column, which lines form one list) rather \
+            than just raw lines of text; use `ocr` when you only need the plain text (it's the \
+            lighter-weight path). Coordinate convention: left/top/width/height = bounding box; \
+            top-left origin; physical pixels — one box per paragraph/table/list, not per word \
+            or line (use `ocr --words` for that level of detail). Tables/lists nested inside a \
+            cell or list item are flattened to their text only, not walked recursively. Remote \
+            callers (non-Mac nodes): send the image as base64 in the `data` field instead of `path`.
+            """,
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "path": ["type": "string", "description": "Path to an image (png/jpg/heic/tiff/...) or a PDF. Required if `data` is not provided."],
+                    "data": ["type": "string", "description": "Base64-encoded image or PDF for remote (non-Mac) callers. Required if `path` is not provided. Takes precedence over `path` when both are supplied."],
+                    "page": ["type": "integer", "description": "PDF page, 1-based. Default 1."],
+                    "scale": ["type": "number", "description": "PDF rasterization scale (2.0 ≈ 144 dpi). Default 2.0."],
+                    "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
+                ],
+                // `required` intentionally omitted — same path/data XOR as `ocr` (see its comment).
+            ],
+        ]
+    }
+
     static var doctor: [String: Any] {
         [
             "name": "doctor",
@@ -422,6 +451,10 @@ enum MCPTools {
             return VisionRequest(
                 op: "qr", path: args["path"] as? String, data: args["data"] as? String,
                 minConfidence: number(args["minConfidence"]),
+                page: int(args["page"]), scale: number(args["scale"]))
+        case "document-ocr":
+            return VisionRequest(
+                op: "document-ocr", path: args["path"] as? String, data: args["data"] as? String,
                 page: int(args["page"]), scale: number(args["scale"]))
         case "make-qr":
             return VisionRequest(

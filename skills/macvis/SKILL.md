@@ -3,16 +3,17 @@ name: macvis
 description: >
   On-device, zero-token vision for AI agents (mac-local-vision, macOS). Read text from an
   image / screenshot / PDF (OCR), find the exact click-pixel of a word for E2E/UI assertions,
-  scan QR codes and barcodes, group photos by face, flatten a photographed document, or ask a
-  question about an image. Apple Vision + Foundation Models, fully on-device — no cloud, no
-  vision tokens, ~0.3s per call. Reach for this whenever an agent needs to read or locate
-  something in a screenshot/image instead of sending it to a cloud vision API, or needs to
-  generate a QR code or straighten a photographed document/receipt. Triggers: read text from
-  an image, OCR a screenshot/PDF, find a button's pixel coordinates, click-point for E2E,
-  assert text is on screen, scan a QR code, read a barcode, decode a barcode payload, generate
-  a QR code, create a QR code image, find a document's corners, flatten/straighten/scan a
-  photographed document or receipt, perspective-correct an image, on-device/local vision, sort
-  photos by person. Apple Silicon + macOS 26+ (`ask` needs macOS 27).
+  scan QR codes and barcodes, group photos by face, flatten a photographed document, extract a
+  document's structured layout, or ask a question about an image. Apple Vision + Foundation
+  Models, fully on-device — no cloud, no vision tokens, ~0.3s per call. Reach for this whenever
+  an agent needs to read or locate something in a screenshot/image instead of sending it to a
+  cloud vision API, or needs to generate a QR code or straighten a photographed document/receipt.
+  Triggers: read text from an image, OCR a screenshot/PDF, find a button's pixel coordinates,
+  click-point for E2E, assert text is on screen, scan a QR code, read a barcode, decode a barcode
+  payload, generate a QR code, create a QR code image, find a document's corners,
+  flatten/straighten/scan a photographed document or receipt, perspective-correct an image,
+  extract a table from an image, parse a document's structure, read a receipt/invoice layout,
+  on-device/local vision, sort photos by person. Apple Silicon + macOS 26+ (`ask` needs macOS 27).
 user_invocable: true
 ---
 
@@ -32,12 +33,14 @@ user_invocable: true
 | Generate a scannable QR code PNG | `macvis make-qr "<text>" --out <path>` |
 | Find a document's four corners in a photo | `macvis document-bounds <path>` |
 | Flatten/straighten a photographed document into a scan | `macvis rectify-document <path> --out <path>` |
+| Extract a document's title/paragraphs/tables/lists with layout preserved | `macvis document-ocr <path>` |
 | To *interpret* an image (describe, reason, summarize) — macOS 27 | `macvis ask <path> --prompt "<question>"` |
 | Group photos by person | `macvis sort-faces <dir>` |
 | Find photos matching a given face | `macvis find-person --target <face.jpg> --dir <dir>` |
 | Check what runs on this machine | `macvis doctor` |
 
 Rule of thumb: `ocr` to read everything, `find` to get one word's pixel to click/assert,
+`document-ocr` when the layout (table cells, list items) matters rather than flat lines,
 `ask` only when you need interpretation rather than raw text.
 
 ## Examples
@@ -53,6 +56,7 @@ macvis qr ./ticket.png                             # scan for a QR code only
 macvis make-qr "https://example.com" --out ./qr.png  # write a scannable QR PNG
 macvis document-bounds ./receipt.jpg                  # find a document's 4 corners
 macvis rectify-document ./receipt.jpg --out ./flat.png # flatten a photographed document
+macvis document-ocr ./invoice.png                    # title/paragraphs/tables/lists, structured
 macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photos by person
 ```
 
@@ -70,4 +74,4 @@ macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photo
 Full flags for any command live in `macvis <command> --help` (the canonical, code-generated
 reference). To drive it as a tool server instead of the CLI, run `macvis mcp` — same engine,
 exposes `ocr` / `find` / `barcode` / `qr` / `make-qr` / `document-bounds` / `rectify-document` /
-`doctor` (and `ask` on macOS 27 builds) as MCP tools.
+`document-ocr` / `doctor` (and `ask` on macOS 27 builds) as MCP tools.
