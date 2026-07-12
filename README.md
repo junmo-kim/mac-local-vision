@@ -97,10 +97,11 @@ swift build -c release && cp .build/release/macvis /usr/local/bin/
 | --- | --- | --- |
 | `ocr` / `find` | ✅ working | Apple Silicon · macOS 26 |
 | `barcode` | ✅ working — QR + every Vision-supported 1D/2D symbology in one command | Apple Silicon · macOS 26 |
-| `make-qr` | ✅ working — CoreImage, no Vision needed; round-trips through `barcode` | any Mac · macOS 26 |
+| `qr` | ✅ working — `barcode` restricted to QR only, server-side (no `--symbology` flag) | Apple Silicon · macOS 26 |
+| `make-qr` | ✅ working — CoreImage, no Vision needed; round-trips through `barcode`/`qr` | any Mac · macOS 26 |
 | `doctor` | ✅ working | macOS 26 |
 | `sort-faces` / `find-person` | ✅ working — same-session grouping; cross-time identity is approximate (see note) | Apple Silicon · macOS 26 |
-| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/make-qr/doctor as tools (+ask on macOS 27 builds) | macOS 26 |
+| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/qr/make-qr/doctor as tools (+ask on macOS 27 builds) | macOS 26 |
 | `serve` | ✅ working — HTTP JSON-RPC MCP server for remote/non-Mac nodes | macOS 26 |
 | `ask` | 🟢 Beta — targets a pre-release Apple stack; real end-to-end inference verified on a macOS 27 Beta boot (see note) | macOS 27 (Beta) + Apple Intelligence |
 
@@ -137,6 +138,7 @@ macvis ocr ./receipt.png                                # extract text
 macvis find ./screen.png --target "Submit"              # pixel center of a word
 macvis find ./screen.png --target "결제하기"             # non-Latin works too (locale-aware)
 macvis barcode ./ticket.png                              # scan every QR/barcode symbology
+macvis qr ./ticket.png                                   # scan for QR codes only
 macvis make-qr "https://example.com" --out ./qr.png # write a scannable QR PNG
 macvis ask ./design.png --prompt "main theme color?"    # Beta — needs macOS 27 (Beta)
 macvis doctor                                           # which modes work here
@@ -173,9 +175,8 @@ $ macvis find ./screen.png --target "Settings" --format json
 {"found":true,"x":126,"y":69,"left":38,"top":48,"width":176,"height":42,"confidence":1,"text_found":"Settings"}
 ```
 
-`barcode` scans every QR/barcode symbology in one call (no separate `qr` command) and returns
-each code's payload, symbology, and pixel box; `code_count: 0` (not an error, exit `0`) when
-none are found:
+`barcode` scans every QR/barcode symbology in one call and returns each code's payload,
+symbology, and pixel box; `code_count: 0` (not an error, exit `0`) when none are found:
 
 ```yaml
 $ macvis barcode ./ticket.png
@@ -197,7 +198,27 @@ codes:
 Restrict to specific symbologies with `--symbology qr,code128` (comma-separated); an unknown
 symbology name is a structured `bad_request`/`unknown_symbology` error, exit `64`.
 
-`make-qr` is the write counterpart to `barcode` — it encodes text into a scannable QR PNG
+`qr` is `barcode` narrowed to QR only, enforced server-side — there's no `--symbology` flag
+to override it. Same output shape as `barcode`, just always QR-scoped:
+
+```yaml
+$ macvis qr ./ticket.png
+image_width: 1080
+image_height: 2400
+code_count: 1
+codes:
+  - payload: "https://example.com/ticket/abc123"
+    symbology: qr
+    x: 512
+    y: 300
+    left: 480
+    top: 270
+    width: 64
+    height: 64
+    confidence: 1
+```
+
+`make-qr` is the write counterpart to `barcode`/`qr` — it encodes text into a scannable QR PNG
 via CoreImage (`CIQRCodeGenerator`), not Vision, so it works on any Mac regardless of
 Vision/Apple Intelligence availability. Give `--out` to write a file and get its path back;
 omit it to get the PNG as base64 in `image_data` instead (for remote/MCP callers with no local
@@ -246,7 +267,7 @@ though: Apple's API doesn't expose one, so `ask` follows the prompt's language r
 Two equivalent integrations — both run the same `VisionService` engine, so the output is identical.
 
 **MCP server (stdio)** — `macvis mcp` speaks stdio JSON-RPC and exposes `ocr` / `find` / `barcode` /
-`make-qr` / `doctor` as tools (plus `ask` when the binary is built with the macOS 27 multimodal path):
+`qr` / `make-qr` / `doctor` as tools (plus `ask` when the binary is built with the macOS 27 multimodal path):
 
 ```json
 { "mcpServers": { "mac-vision": { "command": "/path/to/macvis", "args": ["mcp"] } } }

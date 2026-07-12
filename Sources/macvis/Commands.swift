@@ -87,6 +87,27 @@ enum BarcodeCommand {
     }
 }
 
+// MARK: - qr
+
+/// `barcode` restricted to QR only, server-side (see VisionService.qr) — deliberately has
+/// no --symbology flag, so there's no argument to parse that could override it.
+enum QRCommand {
+    static func run(_ args: [String]) async throws -> Int32 {
+        if CLIHelp.wantsHelp(args) { return helpExit("qr") }
+        let parsed = ArgParser.parse(args)
+        let format = try resolveFormat(parsed)
+        guard let path = parsed.firstPositional else {
+            throw CLIError(message: CLIHelp.usage(for: "qr")!)
+        }
+        let req = VisionRequest(
+            op: "qr", path: path,
+            minConfidence: try optDouble(parsed, "min-confidence"),
+            page: try optInt(parsed, "page"),
+            scale: try optDouble(parsed, "scale"))
+        return await runService(req, format: format)
+    }
+}
+
 // MARK: - make-qr
 
 enum MakeQRCommand {

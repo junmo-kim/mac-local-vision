@@ -26,6 +26,7 @@ user_invocable: true
 | Read all text from an image / screenshot / PDF | `macvis ocr <path>` |
 | The click-point `(x,y)` of a specific word — E2E / UI targeting | `macvis find <path> --target "<text>"` |
 | Scan a QR code or barcode (any symbology) | `macvis barcode <path>` |
+| Scan for a QR code only (skip other symbologies) | `macvis qr <path>` |
 | Generate a scannable QR code PNG | `macvis make-qr "<text>" --out <path>` |
 | To *interpret* an image (describe, reason, summarize) — macOS 27 | `macvis ask <path> --prompt "<question>"` |
 | Group photos by person | `macvis sort-faces <dir>` |
@@ -44,6 +45,7 @@ macvis find ./screen.png --target "Submit"        # → x,y click center + bound
 macvis find ./screen.png --target "결제하기"        # non-Latin works (locale-aware)
 macvis ocr ./doc.pdf --page 2                      # PDF page (rasterized)
 macvis barcode ./ticket.png                        # scan every QR/barcode symbology
+macvis qr ./ticket.png                             # scan for a QR code only
 macvis make-qr "https://example.com" --out ./qr.png  # write a scannable QR PNG
 macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photos by person
 ```
@@ -61,4 +63,4 @@ macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photo
 
 Full flags for any command live in `macvis <command> --help` (the canonical, code-generated
 reference). To drive it as a tool server instead of the CLI, run `macvis mcp` — same engine,
-exposes `ocr` / `find` / `barcode` / `make-qr` / `doctor` (and `ask` on macOS 27 builds) as MCP tools.
+exposes `ocr` / `find` / `barcode` / `qr` / `make-qr` / `doctor` (and `ask` on macOS 27 builds) as MCP tools.

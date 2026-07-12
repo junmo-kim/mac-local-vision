@@ -13,10 +13,11 @@ enum VisionService {
         case "ask":    return try await ask(req)
         case "ping":   return ServiceResult(.dict([("ok", .bool(true))]))
         case "barcode": return try barcode(req)
+        case "qr": return try qr(req)
         case "make-qr": return try generateQR(req)
         default:
             throw ServiceError(name: "bad_request", reason: "unknown_op", detail: req.op,
-                               hint: "ops: ocr | find | doctor | ask | barcode | make-qr", exitCode: ExitCode.usage.rawValue)
+                               hint: "ops: ocr | find | doctor | ask | barcode | qr | make-qr", exitCode: ExitCode.usage.rawValue)
         }
     }
 
@@ -142,6 +143,20 @@ enum VisionService {
         } catch let e as VisionError {
             throw imageError(e, label: input.label)
         }
+    }
+
+    // MARK: - qr
+
+    /// `barcode`'s QR-only counterpart. The `qr` CLI/MCP surface has no --symbology flag,
+    /// so a caller has no way to ask for anything but QR — this forces `symbologies` to
+    /// `["qr"]` here, server-side, rather than trusting a client-supplied value, and reuses
+    /// `barcode(_:)` wholesale so there's exactly one scan code path (Micro QR is a distinct
+    /// Vision symbology and is intentionally excluded — use `barcode --symbology microQR`
+    /// for that).
+    static func qr(_ req: VisionRequest) throws -> ServiceResult {
+        var forced = req
+        forced.symbologies = ["qr"]
+        return try barcode(forced)
     }
 
     // MARK: - make-qr

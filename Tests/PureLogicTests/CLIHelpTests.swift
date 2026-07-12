@@ -14,11 +14,19 @@ struct CLIHelpTests {
 
     @Test("every dispatchable command with flags has a usage string")
     func usageCoverage() {
-        for cmd in ["ocr", "find", "barcode", "make-qr", "ask", "sort-faces", "find-person", "doctor"] {
+        for cmd in ["ocr", "find", "barcode", "qr", "make-qr", "ask", "sort-faces", "find-person", "doctor"] {
             let u = CLIHelp.usage(for: cmd)
             #expect(u != nil, "missing usage for \(cmd)")
             #expect(u?.contains("macvis \(cmd)") == true, "usage for \(cmd) should name the command")
         }
+        #expect(CLIHelp.usage(for: "generate-qr") == nil, "generate-qr was renamed to make-qr — the old key must not linger")
         #expect(CLIHelp.usage(for: "nonsense") == nil)
+    }
+
+    @Test("qr has no --symbology flag — it's hardwired to QR-only, unlike barcode")
+    func qrUsageHasNoSymbologyFlag() {
+        let u = CLIHelp.usage(for: "qr")
+        #expect(u != nil)
+        #expect(u?.contains("--symbology") == false, "qr must not expose --symbology — it's always QR-only")
     }
 }

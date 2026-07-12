@@ -127,7 +127,7 @@ enum MCPTools {
         // Capability-matched: only advertise `ask` when this binary was built with the
         // macOS 27 multimodal path. `request(for:)` still maps a direct `ask` call on any
         // build (→ structured needs_macos_27 error, not a bare "unknown tool").
-        var tools: [[String: Any]] = [ocr, find, barcode, makeQR, doctor]
+        var tools: [[String: Any]] = [ocr, find, barcode, qr, makeQR, doctor]
         #if MACVIS_ASK_IMAGE
         tools.append(ask)
         #endif
@@ -205,15 +205,16 @@ enum MCPTools {
             "name": "barcode",
             "description": """
             Scan an image or PDF for QR codes and 1D/2D barcodes, decoding every symbology \
-            Vision supports (QR, Code128, EAN, PDF417, DataMatrix, Aztec, ...) in one call — \
-            there is no separate `qr` tool. Returns `code_count` and a `codes` array; \
-            `code_count: 0` (not an error) when none are found. Each code has `payload` \
-            (null when the symbology/data can't be decoded to a string — still reported), \
-            `symbology`, and pixel coordinates: x,y = click center; left/top/width/height = \
-            bounding box; top-left origin; physical pixels. Restrict scanning to specific \
-            symbologies via `symbologies` (e.g. ["qr"]) to skip false positives from other \
-            code types in a busy image. Remote callers (non-Mac nodes): send the image as \
-            base64 in the `data` field instead of `path`.
+            Vision supports (QR, Code128, EAN, PDF417, DataMatrix, Aztec, ...) in one call. \
+            Use `qr` instead when you only care about QR codes — it's this same scan \
+            restricted to QR server-side, with a smaller schema (no `symbologies`). Returns \
+            `code_count` and a `codes` array; `code_count: 0` (not an error) when none are \
+            found. Each code has `payload` (null when the symbology/data can't be decoded to \
+            a string — still reported), `symbology`, and pixel coordinates: x,y = click \
+            center; left/top/width/height = bounding box; top-left origin; physical pixels. \
+            Restrict scanning to specific symbologies via `symbologies` (e.g. ["qr"]) to skip \
+            false positives from other code types in a busy image. Remote callers (non-Mac \
+            nodes): send the image as base64 in the `data` field instead of `path`.
             """,
             "inputSchema": [
                 "type": "object",
@@ -222,6 +223,34 @@ enum MCPTools {
                     "data": ["type": "string", "description": "Base64-encoded image or PDF for remote (non-Mac) callers. Required if `path` is not provided. Takes precedence over `path` when both are supplied."],
                     "symbologies": ["type": "array", "items": ["type": "string"],
                                     "description": "Restrict detection to these symbologies (e.g. [\"qr\",\"code128\"]). Default: scan all supported symbologies."],
+                    "minConfidence": ["type": "number", "description": "Drop results below this confidence (0..1). Default 0."],
+                    "page": ["type": "integer", "description": "PDF page, 1-based. Default 1."],
+                    "scale": ["type": "number", "description": "PDF rasterization scale (2.0 ≈ 144 dpi). Default 2.0."],
+                    "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
+                ],
+                // `required` intentionally omitted — same path/data XOR as `ocr` (see its comment).
+            ],
+        ]
+    }
+
+    static var qr: [String: Any] {
+        [
+            "name": "qr",
+            "description": """
+            Scan an image or PDF for QR codes only — `barcode` restricted to QR server-side, \
+            with no `symbologies` property to override that (use `barcode` with \
+            `symbologies: ["qr"]` if you want the fuller schema, or without it to also catch \
+            other 1D/2D symbologies). Same response shape as `barcode`: `code_count` and a \
+            `codes` array; `code_count: 0` (not an error) when no QR is found. Coordinate \
+            convention: x,y = click center; left/top/width/height = bounding box; top-left \
+            origin; physical pixels. Remote callers (non-Mac nodes): send the image as base64 \
+            in the `data` field instead of `path`.
+            """,
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "path": ["type": "string", "description": "Path to an image (png/jpg/heic/tiff/...) or a PDF. Required if `data` is not provided."],
+                    "data": ["type": "string", "description": "Base64-encoded image or PDF for remote (non-Mac) callers. Required if `path` is not provided. Takes precedence over `path` when both are supplied."],
                     "minConfidence": ["type": "number", "description": "Drop results below this confidence (0..1). Default 0."],
                     "page": ["type": "integer", "description": "PDF page, 1-based. Default 1."],
                     "scale": ["type": "number", "description": "PDF rasterization scale (2.0 ≈ 144 dpi). Default 2.0."],
@@ -327,6 +356,11 @@ enum MCPTools {
                 minConfidence: number(args["minConfidence"]),
                 page: int(args["page"]), scale: number(args["scale"]),
                 symbologies: args["symbologies"] as? [String])
+        case "qr":
+            return VisionRequest(
+                op: "qr", path: args["path"] as? String, data: args["data"] as? String,
+                minConfidence: number(args["minConfidence"]),
+                page: int(args["page"]), scale: number(args["scale"]))
         case "make-qr":
             return VisionRequest(
                 op: "make-qr", text: args["text"] as? String,

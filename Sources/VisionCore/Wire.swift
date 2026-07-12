@@ -3,7 +3,7 @@ import Foundation
 /// The request contract shared by the CLI and the MCP server. A request fully
 /// describes one operation; optional fields default at the service layer.
 public struct VisionRequest: Codable, Sendable {
-    public var op: String              // ocr | find | doctor | ask | ping | barcode | make-qr
+    public var op: String              // ocr | find | doctor | ask | ping | barcode | qr | make-qr
     public var path: String?
     public var data: String?           // base64-encoded image/PDF — alternative to path for remote callers
     public var target: String?

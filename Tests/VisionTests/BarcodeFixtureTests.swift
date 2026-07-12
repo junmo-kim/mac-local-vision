@@ -121,6 +121,36 @@ struct BarcodeFixtureTests {
         }
     }
 
+    // MARK: - qr command contract (VisionService.qr forces symbologies: ["qr"])
+
+    // The `qr` CLI/MCP command has no --symbology flag: VisionService.qr(_:) always calls
+    // through to this exact `symbologies: ["qr"]` filtered detect (VisionService itself has
+    // no test target — see Package.swift — so this is the closest testable proxy for its
+    // contract; the dispatch wiring itself is verified via release-binary E2E).
+
+    @Test("symbologies: [\"qr\"] finds a QR code — the qr command's happy path")
+    func qrOnlyFilterFindsQR() throws {
+        let payload = "qr-command-contract-check"
+        let path = Self.renderQRFixture(payload)
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let result = try BarcodeEngine.detect(path: path, symbologies: ["qr"])
+        #expect(result.codes.count == 1)
+        #expect(result.codes.first?.payload == payload)
+        #expect(result.codes.first?.symbologyName == "qr")
+    }
+
+    @Test("symbologies: [\"qr\"] reports code_count: 0 on a non-QR barcode — the qr command must not fall back to barcode's full scan")
+    func qrOnlyFilterExcludesOtherSymbologies() throws {
+        let path = Self.renderCode128Fixture("qr-command-should-not-see-this")
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let result = try BarcodeEngine.detect(path: path, symbologies: ["qr"])
+        #expect(result.codes.isEmpty)
+        // Meanwhile the unrestricted scan (what `barcode` does) still finds it — proves the
+        // qr/barcode divergence is the filter, not a broken fixture.
+        let unrestricted = try BarcodeEngine.detect(path: path)
+        #expect(unrestricted.codes.count == 1)
+    }
+
     // MARK: - data (base64) path — same logic, in-memory instead of disk
 
     @Test("detect(data:) reads the same QR payload as detect(path:)")
