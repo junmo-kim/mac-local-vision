@@ -342,11 +342,11 @@ enum VisionService {
             case .path(let p):
                 r = try await ClassifyEngine.classify(
                     path: p, minConfidence: req.minConfidence ?? ClassifyEngine.defaultMinConfidence,
-                    top: req.top)
+                    top: req.top, page: req.page ?? 1, scale: req.scale ?? 2.0)
             case .data(let d):
                 r = try await ClassifyEngine.classify(
                     data: d, minConfidence: req.minConfidence ?? ClassifyEngine.defaultMinConfidence,
-                    top: req.top)
+                    top: req.top, page: req.page ?? 1, scale: req.scale ?? 2.0)
             }
             let labels = r.labels.map { label -> YAMLValue in
                 .dict([

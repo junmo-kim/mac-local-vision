@@ -143,6 +143,8 @@ enum ClassifyCommand {
         let req = VisionRequest(
             op: "classify", path: path,
             minConfidence: try optDouble(parsed, "min-confidence"),
+            page: try optInt(parsed, "page"),
+            scale: try optDouble(parsed, "scale"),
             top: try optInt(parsed, "top"))
         return await runService(req, format: format)
     }

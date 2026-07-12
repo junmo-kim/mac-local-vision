@@ -71,6 +71,29 @@ struct ClassifyFixtureTests {
         return writePNG(ctx.makeImage()!)
     }
 
+    /// A multi-page PDF where each page has a distinct `mediaBox` size — lets a test prove
+    /// `--page`/`--scale` actually reached `OCREngine.loadImage` by checking the *rasterized
+    /// dimensions* it returns, without depending on Vision's classification output (which,
+    /// per this suite's fixtures, is just noise for synthetic content anyway).
+    static func writeMultiPagePDF(pageSizes: [(width: CGFloat, height: CGFloat)]) -> String {
+        let path = NSTemporaryDirectory() + "macvis-classify-pdf-\(UUID().uuidString).pdf"
+        let url = URL(fileURLWithPath: path)
+        let ctx = CGContext(url as CFURL, mediaBox: nil, nil)!
+        for size in pageSizes {
+            var mediaBox = CGRect(x: 0, y: 0, width: size.width, height: size.height)
+            let pageInfo = withUnsafeBytes(of: &mediaBox) { raw -> CFDictionary in
+                let data = NSData(bytes: raw.baseAddress, length: raw.count)
+                return [kCGPDFContextMediaBox as String: data] as CFDictionary
+            }
+            ctx.beginPDFPage(pageInfo)
+            ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: size.width, height: size.height))
+            ctx.endPDFPage()
+        }
+        ctx.closePDF()
+        return path
+    }
+
     // MARK: - basic behavior (default min-confidence 0.1)
 
     @Test("classify runs without throwing on a synthetic image and returns image dimensions")
@@ -168,6 +191,38 @@ struct ClassifyFixtureTests {
         #expect(fromPath.labels.map(\.identifier) == fromData.labels.map(\.identifier))
         #expect(fromPath.imageWidth == fromData.imageWidth)
         #expect(fromPath.imageHeight == fromData.imageHeight)
+    }
+
+    // MARK: - --page / --scale (PDF) — parity with barcode/ocr/find/ask, plan §2.6 amendment
+
+    @Test("--page selects a distinct PDF page (proven via distinct rasterized dimensions)")
+    func pageSelectsDistinctPDFPage() async throws {
+        let path = Self.writeMultiPagePDF(pageSizes: [(100, 150), (300, 200)])
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        // Default scale (2.0) doubles each mediaBox dimension.
+        let page1 = try await ClassifyEngine.classify(path: path, minConfidence: 0.0, top: 1, page: 1)
+        let page2 = try await ClassifyEngine.classify(path: path, minConfidence: 0.0, top: 1, page: 2)
+        #expect(page1.imageWidth == 200 && page1.imageHeight == 300)
+        #expect(page2.imageWidth == 600 && page2.imageHeight == 400)
+    }
+
+    @Test("--scale changes the rasterized PDF page size")
+    func scaleAffectsPDFRasterSize() async throws {
+        let path = Self.writeMultiPagePDF(pageSizes: [(100, 150)])
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let unscaled = try await ClassifyEngine.classify(path: path, minConfidence: 0.0, top: 1, page: 1, scale: 1.0)
+        let doubled = try await ClassifyEngine.classify(path: path, minConfidence: 0.0, top: 1, page: 1, scale: 2.0)
+        #expect(unscaled.imageWidth == 100 && unscaled.imageHeight == 150)
+        #expect(doubled.imageWidth == 200 && doubled.imageHeight == 300)
+    }
+
+    @Test("classify(data:) also honors --page for a multi-page PDF")
+    func dataPathHonorsPage() async throws {
+        let path = Self.writeMultiPagePDF(pageSizes: [(100, 150), (300, 200)])
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let page2 = try await ClassifyEngine.classify(data: data, minConfidence: 0.0, top: 1, page: 2)
+        #expect(page2.imageWidth == 600 && page2.imageHeight == 400)
     }
 
     // MARK: - error paths

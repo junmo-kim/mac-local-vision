@@ -287,6 +287,8 @@ enum MCPTools {
                     "data": ["type": "string", "description": "Base64-encoded image or PDF for remote (non-Mac) callers. Required if `path` is not provided. Takes precedence over `path` when both are supplied."],
                     "minConfidence": ["type": "number", "description": "Drop labels below this confidence (0..1). Default 0.1 — Vision scores all 1,303 labels for every image, most near 0, so a low default would flood the response."],
                     "top": ["type": "integer", "description": "Maximum number of labels to return, highest confidence first. Default 20. Clamped to a minimum of 1."],
+                    "page": ["type": "integer", "description": "PDF page, 1-based. Default 1."],
+                    "scale": ["type": "number", "description": "PDF rasterization scale (2.0 ≈ 144 dpi). Default 2.0."],
                     "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
                 ],
                 // `required` intentionally omitted — same path/data XOR as `ocr` (see its comment).
@@ -493,6 +495,7 @@ enum MCPTools {
             return VisionRequest(
                 op: "classify", path: args["path"] as? String, data: args["data"] as? String,
                 minConfidence: number(args["minConfidence"]),
+                page: int(args["page"]), scale: number(args["scale"]),
                 top: int(args["top"]))
         case "make-qr":
             return VisionRequest(

@@ -37,9 +37,12 @@ public struct ClassificationScanResult: Sendable {
 /// **Every entry point is `async` — this is not optional.** Concurrent
 /// `VNClassifyImageRequest.perform()` calls deadlock: reproduced directly with plain Swift
 /// `Task` concurrency (13 concurrent `Task {}`s, each just calling `perform()` once, hang
-/// indefinitely — killed after 90s at near-zero CPU, i.e. genuinely blocked, not slow; no
-/// comparable issue exists for `BarcodeEngine`/`OCREngine`, which don't route through a
-/// CoreML-backed model the same way). Neither an in-place `NSLock` nor
+/// indefinitely — killed after 90s at near-zero CPU, i.e. genuinely blocked, not slow).
+/// This repro is scoped to `VNClassifyImageRequest` only — whether `BarcodeEngine`/
+/// `OCREngine`/`FaceEngine`'s own Vision requests share this failure mode was **not**
+/// tested as part of this change and is not claimed here either way; if you're touching
+/// those engines' concurrency behavior, verify it independently rather than relying on
+/// this comment. Neither an in-place `NSLock` nor
 /// `DispatchQueue.sync` around `perform()` fixes it — both still park the calling
 /// Swift-concurrency cooperative-pool thread while serialized work runs, and with enough
 /// concurrent callers that starves the (small, fixed-size) cooperative pool, which itself
@@ -117,9 +120,11 @@ public enum ClassifyEngine {
     public static func classify(
         path: String,
         minConfidence: Double = defaultMinConfidence,
-        top: Int? = nil
+        top: Int? = nil,
+        page: Int = 1,
+        scale: Double = 2.0
     ) async throws -> ClassificationScanResult {
-        let (cgImage, width, height) = try OCREngine.loadImage(path: path)
+        let (cgImage, width, height) = try OCREngine.loadImage(path: path, page: page, scale: scale)
         return try await classifyCore(cgImage: cgImage, width: width, height: height,
                                       minConfidence: minConfidence, top: top)
     }
@@ -127,9 +132,11 @@ public enum ClassifyEngine {
     public static func classify(
         data: Data,
         minConfidence: Double = defaultMinConfidence,
-        top: Int? = nil
+        top: Int? = nil,
+        page: Int = 1,
+        scale: Double = 2.0
     ) async throws -> ClassificationScanResult {
-        let (cgImage, width, height) = try OCREngine.loadImage(data: data)
+        let (cgImage, width, height) = try OCREngine.loadImage(data: data, page: page, scale: scale)
         return try await classifyCore(cgImage: cgImage, width: width, height: height,
                                       minConfidence: minConfidence, top: top)
     }
