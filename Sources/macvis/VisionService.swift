@@ -13,9 +13,10 @@ enum VisionService {
         case "ask":    return try await ask(req)
         case "ping":   return ServiceResult(.dict([("ok", .bool(true))]))
         case "barcode": return try barcode(req)
+        case "make-qr": return try generateQR(req)
         default:
             throw ServiceError(name: "bad_request", reason: "unknown_op", detail: req.op,
-                               hint: "ops: ocr | find | doctor | ask | barcode", exitCode: ExitCode.usage.rawValue)
+                               hint: "ops: ocr | find | doctor | ask | barcode | make-qr", exitCode: ExitCode.usage.rawValue)
         }
     }
 
@@ -141,6 +142,33 @@ enum VisionService {
         } catch let e as VisionError {
             throw imageError(e, label: input.label)
         }
+    }
+
+    // MARK: - make-qr
+
+    /// Unlike every other op, this one *produces* an image rather than consuming one —
+    /// `req.text` is the payload to encode, and the result is either written to disk
+    /// (`outPath` given) or returned in-band as base64 (`image_data`, for remote/MCP
+    /// callers that can't write to this machine's filesystem — plan §2.4.5).
+    static func generateQR(_ req: VisionRequest) throws -> ServiceResult {
+        let correctionLevel = req.correctionLevel ?? "M"
+        // QRGenerator.generate validates text/correctionLevel itself and throws the same
+        // bad_request/{missing_text,invalid_correction_level} ServiceError shape — no need
+        // to duplicate that check here (same pattern as BarcodeEngine.resolveSymbologies's
+        // unknown_symbology, which VisionService.barcode() also lets propagate untouched).
+        let result = try QRGenerator.generate(text: req.text ?? "", correctionLevel: correctionLevel, size: req.size)
+        var fields: [(String, YAMLValue)]
+        if let outPath = req.outPath, !outPath.isEmpty {
+            try result.png.write(to: URL(fileURLWithPath: outPath))
+            fields = [("path", .string(outPath))]
+        } else {
+            fields = [("image_data", .string(result.png.base64EncodedString()))]
+        }
+        fields.append(contentsOf: [
+            ("width", .int(result.width)), ("height", .int(result.height)),
+            ("correction_level", .string(correctionLevel)),
+        ])
+        return ServiceResult(.dict(fields))
     }
 
     // MARK: - doctor

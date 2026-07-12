@@ -3,7 +3,7 @@ import Foundation
 /// The request contract shared by the CLI and the MCP server. A request fully
 /// describes one operation; optional fields default at the service layer.
 public struct VisionRequest: Codable, Sendable {
-    public var op: String              // ocr | find | doctor | ask | ping | barcode
+    public var op: String              // ocr | find | doctor | ask | ping | barcode | make-qr
     public var path: String?
     public var data: String?           // base64-encoded image/PDF — alternative to path for remote callers
     public var target: String?
@@ -18,19 +18,29 @@ public struct VisionRequest: Codable, Sendable {
     public var scale: Double?
     public var format: String?         // yaml | json — output rendering
     public var symbologies: [String]?  // barcode: restrict to these symbologies (empty/nil = all)
+    public var text: String?           // make-qr: the text to encode
+    // make-qr: file path to write the PNG to; nil = return `image_data` (base64) instead.
+    // Distinct from `path` (which means "input image to read" everywhere else) since
+    // make-qr is the first op that *produces* an image rather than consuming one.
+    public var outPath: String?
+    public var correctionLevel: String? // make-qr: L | M | Q | H (default M)
+    public var size: Int?              // make-qr: per-module pixel magnification (default 10)
 
     public init(op: String, path: String? = nil, data: String? = nil,
                 target: String? = nil, prompt: String? = nil,
                 fast: Bool? = nil, words: Bool? = nil, boxes: Bool? = nil, stream: Bool? = nil,
                 minConfidence: Double? = nil, languages: [String]? = nil,
                 page: Int? = nil, scale: Double? = nil, format: String? = nil,
-                symbologies: [String]? = nil) {
+                symbologies: [String]? = nil, text: String? = nil, outPath: String? = nil,
+                correctionLevel: String? = nil, size: Int? = nil) {
         self.op = op; self.path = path; self.data = data
         self.target = target; self.prompt = prompt
         self.fast = fast; self.words = words; self.boxes = boxes; self.stream = stream
         self.minConfidence = minConfidence; self.languages = languages
         self.page = page; self.scale = scale; self.format = format
         self.symbologies = symbologies
+        self.text = text; self.outPath = outPath
+        self.correctionLevel = correctionLevel; self.size = size
     }
 }
 
