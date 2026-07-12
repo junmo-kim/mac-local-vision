@@ -16,15 +16,15 @@ struct BarcodeFixtureTests {
     static let ciContext = CIContext()
 
     /// Render a QR code carrying `payload` to a unique temp PNG; returns its path.
-    /// Nearest-neighbor sampling before the scale-up keeps module edges crisp — bilinear
-    /// interpolation on a ~30px native QR image would blur modules past Vision's read threshold.
+    /// Delegates to the production `QRGenerator` (promoted from this fixture helper's
+    /// original CIFilter/nearest-neighbor logic in a prior commit — see QRGenerator.swift
+    /// for the module-scale rationale) so the fixture and the `make-qr` command stay
+    /// on one code path.
     static func renderQRFixture(_ payload: String, moduleScale: CGFloat = 12) -> String {
-        let filter = CIFilter(name: "CIQRCodeGenerator")!
-        filter.setValue(Data(payload.utf8), forKey: "inputMessage")
-        filter.setValue("M", forKey: "inputCorrectionLevel")
-        let output = filter.outputImage!.samplingNearest()
-            .transformed(by: CGAffineTransform(scaleX: moduleScale, y: moduleScale))
-        return writePNG(output)
+        let result = try! QRGenerator.generate(text: payload, correctionLevel: "M", size: Int(moduleScale))
+        let path = NSTemporaryDirectory() + "macvis-barcode-fixture-\(UUID().uuidString).png"
+        try! result.png.write(to: URL(fileURLWithPath: path))
+        return path
     }
 
     /// Render a Code128 1D barcode carrying `payload` to a unique temp PNG.
