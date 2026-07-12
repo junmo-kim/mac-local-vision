@@ -78,4 +78,27 @@ struct QRGeneratorPureTests {
         #expect(result.width > 0 && result.height > 0)
     }
 
+    @Test("writing to a nonexistent directory throws a structured generate_qr_failed/write_failed ServiceError, not a raw Cocoa error")
+    func writeToNonexistentDirectoryThrowsStructuredError() {
+        let badPath = NSTemporaryDirectory() + "macvis-qrgen-missing-dir-\(UUID().uuidString)/qr.png"
+        do {
+            try QRGenerator.writePNG(Data([0x1, 0x2, 0x3]), to: badPath)
+            Issue.record("expected throw")
+        } catch {
+            let se = error as? ServiceError
+            #expect(se?.name == "generate_qr_failed")
+            #expect(se?.reason == "write_failed")
+            #expect(se?.detail == badPath)
+            #expect(se?.hint != nil)
+        }
+    }
+
+    @Test("writing to a valid path succeeds and the bytes round-trip")
+    func writeToValidPathSucceeds() throws {
+        let path = NSTemporaryDirectory() + "macvis-qrgen-write-ok-\(UUID().uuidString).png"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let bytes = Data([0x1, 0x2, 0x3])
+        try QRGenerator.writePNG(bytes, to: path)
+        #expect(FileManager.default.contents(atPath: path) == bytes)
+    }
 }

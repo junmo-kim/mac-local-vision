@@ -164,7 +164,7 @@ enum VisionService {
             // artifacts like FaceEngine.writeClusters's symlink farm (which guards against
             // deleting a bystander file it doesn't own) — re-running the same --out is the
             // expected "regenerate this file" workflow.
-            try result.png.write(to: URL(fileURLWithPath: outPath))
+            try QRGenerator.writePNG(result.png, to: outPath)
             fields = [("path", .string(outPath))]
         } else {
             fields = [("image_data", .string(result.png.base64EncodedString()))]

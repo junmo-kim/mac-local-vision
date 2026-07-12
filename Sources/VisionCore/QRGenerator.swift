@@ -97,6 +97,21 @@ public enum QRGenerator {
         return QRGenerateResult(png: png, width: cgImage.width, height: cgImage.height)
     }
 
+    /// Writes `data` (a generated QR PNG) to `path`, translating any Cocoa/POSIX write
+    /// failure (missing parent directory, permissions, ...) into the same structured
+    /// `ServiceError` contract every other `make-qr` failure path already uses
+    /// (Wire.swift's "name/reason/hint" `ServiceError`) instead of letting a raw
+    /// `NSCocoaErrorDomain` dump reach the CLI/MCP caller.
+    public static func writePNG(_ data: Data, to path: String) throws {
+        do {
+            try data.write(to: URL(fileURLWithPath: path))
+        } catch {
+            throw ServiceError(name: "generate_qr_failed", reason: "write_failed", detail: path,
+                               hint: "check the destination directory exists and is writable",
+                               exitCode: ExitCode.runtimeError.rawValue)
+        }
+    }
+
     private static func encodePNG(_ image: CGImage) throws -> Data {
         let data = NSMutableData()
         // "public.png" is the UTType.png identifier spelled as a literal — avoids an
