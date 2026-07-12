@@ -127,6 +127,45 @@ enum MakeQRCommand {
     }
 }
 
+// MARK: - document-bounds
+
+enum DocumentBoundsCommand {
+    static func run(_ args: [String]) async throws -> Int32 {
+        if CLIHelp.wantsHelp(args) { return helpExit("document-bounds") }
+        let parsed = ArgParser.parse(args)
+        let format = try resolveFormat(parsed)
+        guard let path = parsed.firstPositional else {
+            throw CLIError(message: CLIHelp.usage(for: "document-bounds")!)
+        }
+        let req = VisionRequest(
+            op: "document-bounds", path: path,
+            minConfidence: try optDouble(parsed, "min-confidence"),
+            page: try optInt(parsed, "page"),
+            scale: try optDouble(parsed, "scale"))
+        return await runService(req, format: format)
+    }
+}
+
+// MARK: - rectify-document
+
+enum RectifyDocumentCommand {
+    static func run(_ args: [String]) async throws -> Int32 {
+        if CLIHelp.wantsHelp(args) { return helpExit("rectify-document") }
+        let parsed = ArgParser.parse(args)
+        let format = try resolveFormat(parsed)
+        guard let path = parsed.firstPositional else {
+            throw CLIError(message: CLIHelp.usage(for: "rectify-document")!)
+        }
+        let req = VisionRequest(
+            op: "rectify-document", path: path,
+            minConfidence: try optDouble(parsed, "min-confidence"),
+            page: try optInt(parsed, "page"),
+            scale: try optDouble(parsed, "scale"),
+            outPath: parsed.option("out"))
+        return await runService(req, format: format)
+    }
+}
+
 // MARK: - ask
 
 enum AskCommand {

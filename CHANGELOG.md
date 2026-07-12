@@ -24,6 +24,18 @@ alongside `ocr`/`find`/`barcode`/`qr`/`doctor`. Verified round-trip: every gener
 re-scanned through `macvis barcode`'s own `BarcodeEngine.detect` and checked for exact
 payload equality.
 
+Adds `macvis document-bounds` — finds a document's four corners in a photo via
+`VNDetectDocumentSegmentationRequest`, mirroring `barcode`'s detect-only shape and
+`ocr`/`barcode`'s not-found-is-not-an-error semantics (`found: false`, exit `0`). When
+multiple document-like regions are present, reports the largest by area. Adds
+`macvis rectify-document <image> --out <path>` — the write counterpart, reusing
+`document-bounds`'s detection internally and applying CoreImage's `CIPerspectiveCorrection`
+to flatten and crop the document into a straightened, top-down scan; `--out`/base64 branching
+mirrors `make-qr`. No document detected is a `bad_request`/`no_document_detected` error (this
+is a production command, unlike `document-bounds`). Both exposed as MCP tools; adds a
+`document_bounds` field to `doctor`. Verified round-trip: a perspective-warped synthetic
+document is rectified and the flattened text is re-read correctly through `macvis ocr`.
+
 ## v0.2.1
 
 Fixes a real process crash in `ask` when Apple Intelligence isn't ready yet (SIGSEGV

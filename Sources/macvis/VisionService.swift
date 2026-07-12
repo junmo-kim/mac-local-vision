@@ -15,9 +15,12 @@ enum VisionService {
         case "barcode": return try barcode(req)
         case "qr": return try qr(req)
         case "make-qr": return try generateQR(req)
+        case "document-bounds": return try documentBounds(req)
+        case "rectify-document": return try rectifyDocument(req)
         default:
             throw ServiceError(name: "bad_request", reason: "unknown_op", detail: req.op,
-                               hint: "ops: ocr | find | doctor | ask | barcode | qr | make-qr", exitCode: ExitCode.usage.rawValue)
+                               hint: "ops: ocr | find | doctor | ask | barcode | qr | make-qr | document-bounds | rectify-document",
+                               exitCode: ExitCode.usage.rawValue)
         }
     }
 
@@ -194,6 +197,81 @@ enum VisionService {
         return ServiceResult(.dict(fields))
     }
 
+    // MARK: - document-bounds
+
+    /// `barcode`'s detection-only shape, applied to documents: `found: false` (not an error,
+    /// exit 0) when no document quad clears `minConfidence` — see `Geometry.pickLargestQuad`
+    /// for why an exact-zero-confidence Vision candidate never counts as found.
+    static func documentBounds(_ req: VisionRequest) throws -> ServiceResult {
+        let input = try InputSource.resolve(path: req.path, data: req.data)
+        do {
+            let r: DocumentBoundsResult
+            switch input {
+            case .path(let p):
+                r = try DocumentEngine.detectBounds(
+                    path: p, minConfidence: req.minConfidence ?? 0.0,
+                    page: req.page ?? 1, scale: req.scale ?? 2.0)
+            case .data(let d):
+                r = try DocumentEngine.detectBounds(
+                    data: d, minConfidence: req.minConfidence ?? 0.0,
+                    page: req.page ?? 1, scale: req.scale ?? 2.0)
+            }
+            guard let corners = r.corners, let confidence = r.confidence else {
+                return ServiceResult(.dict([
+                    ("image_width", .int(r.imageWidth)), ("image_height", .int(r.imageHeight)),
+                    ("found", .bool(false)),
+                ]))
+            }
+            func point(_ c: DocumentCorner) -> YAMLValue { .dict([("x", .int(c.x)), ("y", .int(c.y))]) }
+            return ServiceResult(.dict([
+                ("image_width", .int(r.imageWidth)), ("image_height", .int(r.imageHeight)),
+                ("found", .bool(true)),
+                ("corners", .dict([
+                    ("top_left", point(corners.topLeft)), ("top_right", point(corners.topRight)),
+                    ("bottom_right", point(corners.bottomRight)), ("bottom_left", point(corners.bottomLeft)),
+                ])),
+                ("confidence", .double(confidence)),
+            ]))
+        } catch let e as VisionError {
+            throw imageError(e, label: input.label)
+        }
+    }
+
+    // MARK: - rectify-document
+
+    /// Unlike `document-bounds` (detect-only), this op *produces* an image — reuses
+    /// `DocumentEngine.rectify`, which internally shares `document-bounds`'s detection core
+    /// (`detectQuad`) and throws `bad_request/no_document_detected` itself when nothing is
+    /// found (a production command with nothing to produce is an error, matching `make-qr`'s
+    /// "reject empty text" precedent — plan §2.5). `--out` / base64 branching mirrors `make-qr`.
+    static func rectifyDocument(_ req: VisionRequest) throws -> ServiceResult {
+        let input = try InputSource.resolve(path: req.path, data: req.data)
+        do {
+            let r: RectifyResult
+            switch input {
+            case .path(let p):
+                r = try DocumentEngine.rectify(
+                    path: p, minConfidence: req.minConfidence ?? 0.0,
+                    page: req.page ?? 1, scale: req.scale ?? 2.0)
+            case .data(let d):
+                r = try DocumentEngine.rectify(
+                    data: d, minConfidence: req.minConfidence ?? 0.0,
+                    page: req.page ?? 1, scale: req.scale ?? 2.0)
+            }
+            var fields: [(String, YAMLValue)]
+            if let outPath = req.outPath, !outPath.isEmpty {
+                try DocumentEngine.writePNG(r.png, to: outPath)
+                fields = [("path", .string(outPath))]
+            } else {
+                fields = [("image_data", .string(r.png.base64EncodedString()))]
+            }
+            fields.append(contentsOf: [("width", .int(r.width)), ("height", .int(r.height))])
+            return ServiceResult(.dict(fields))
+        } catch let e as VisionError {
+            throw imageError(e, label: input.label)
+        }
+    }
+
     // MARK: - doctor
 
     static func doctor() -> YAMLValue {
@@ -203,6 +281,11 @@ enum VisionService {
         let text = status(OCREngine.textVisionAvailable())
         let face = status(OCREngine.faceVisionAvailable())
         let barcodeStatus = status(BarcodeEngine.barcodeVisionAvailable())
+        // Represents both document-bounds and rectify-document (rectify's other half,
+        // CIPerspectiveCorrection, is a plain CoreImage filter with no availability gate —
+        // plan §2.3 — so this single Vision probe is representative of both, same precedent
+        // as `qr` not getting its own doctor entry alongside `barcode`).
+        let documentStatus = status(DocumentEngine.documentVisionAvailable())
         let askStatus: YAMLValue
         #if MACVIS_ASK_IMAGE
         switch probeAskAvailability() {
@@ -221,6 +304,7 @@ enum VisionService {
         return .dict([
             ("ocr", text), ("find", text), ("sort-faces", face),
             ("barcode", barcodeStatus),
+            ("document_bounds", documentStatus),
             ("ask", askStatus), ("ocr_languages", .array(langs)),
             ("ask_languages", .array(askLangs)),
         ])

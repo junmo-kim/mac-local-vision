@@ -12,6 +12,7 @@ No Node, no Python, no runtime dependencies: the OS *is* the dependency.
 - **Fast E2E targeting** — `find` returns the exact pixel center of a word for click/assert.
 - **QR/barcode scanning** — `barcode` decodes every symbology Vision supports (QR, Code128, EAN, PDF417, ...) in one call.
 - **QR generation** — `make-qr` writes a scannable QR code PNG (CoreImage, no Vision needed).
+- **Document rectification** — `rectify-document` finds a photographed document's boundary and flattens it into a straightened, top-down scan; `document-bounds` returns just the four corners.
 - **On-device semantic `ask`** *(Beta)* — multimodal reasoning via Apple Foundation Models (macOS 27 Beta).
 - **Local face sorting** — cluster photos by person without uploading anything.
 
@@ -99,9 +100,11 @@ swift build -c release && cp .build/release/macvis /usr/local/bin/
 | `barcode` | ✅ working — QR + every Vision-supported 1D/2D symbology in one command | Apple Silicon · macOS 26 |
 | `qr` | ✅ working — `barcode` restricted to QR only, server-side (no `--symbology` flag) | Apple Silicon · macOS 26 |
 | `make-qr` | ✅ working — CoreImage, no Vision needed; round-trips through `barcode`/`qr` | any Mac · macOS 26 |
+| `document-bounds` | ✅ working — finds a document's 4 corners (`VNDetectDocumentSegmentationRequest`) | Apple Silicon · macOS 26 |
+| `rectify-document` | ✅ working — detects + perspective-corrects a photographed document into a flattened scan; round-trips through `ocr` | Apple Silicon · macOS 26 |
 | `doctor` | ✅ working | macOS 26 |
 | `sort-faces` / `find-person` | ✅ working — same-session grouping; cross-time identity is approximate (see note) | Apple Silicon · macOS 26 |
-| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/qr/make-qr/doctor as tools (+ask on macOS 27 builds) | macOS 26 |
+| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/qr/make-qr/document-bounds/rectify-document/doctor as tools (+ask on macOS 27 builds) | macOS 26 |
 | `serve` | ✅ working — HTTP JSON-RPC MCP server for remote/non-Mac nodes | macOS 26 |
 | `ask` | 🟢 Beta — targets a pre-release Apple stack; real end-to-end inference verified on a macOS 27 Beta boot (see note) | macOS 27 (Beta) + Apple Intelligence |
 
@@ -140,6 +143,8 @@ macvis find ./screen.png --target "결제하기"             # non-Latin works t
 macvis barcode ./ticket.png                              # scan every QR/barcode symbology
 macvis qr ./ticket.png                                   # scan for QR codes only
 macvis make-qr "https://example.com" --out ./qr.png     # write a scannable QR PNG
+macvis document-bounds ./receipt.jpg                     # find a document's 4 corners
+macvis rectify-document ./receipt.jpg --out ./flat.png  # flatten a photographed document
 macvis ask ./design.png --prompt "main theme color?"    # Beta — needs macOS 27 (Beta)
 macvis doctor                                           # which modes work here
 ```
@@ -238,6 +243,38 @@ reported `width`/`height` are the image actually produced, since module count de
 length and correction level. An unknown correction level is `bad_request`/`invalid_correction_level`,
 exit `64`.
 
+`document-bounds` finds a document's four corners (`VNDetectDocumentSegmentationRequest`) without
+producing a new image — `found: false` (not an error, exit `0`) when nothing is detected, same
+detect-only semantics as `barcode`'s `code_count: 0`. When multiple document-like regions are
+present, it reports the largest by area:
+
+```yaml
+$ macvis document-bounds ./receipt.jpg
+image_width: 1200
+image_height: 1600
+found: true
+corners:
+  top_left:     { x: 120, y: 180 }
+  top_right:    { x: 1080, y: 210 }
+  bottom_right: { x: 1050, y: 1520 }
+  bottom_left:  { x: 90, y: 1490 }
+confidence: 0.94
+```
+
+`rectify-document` is the write counterpart to `document-bounds` — same corner detection, then a
+CoreImage `CIPerspectiveCorrection` pass flattens and crops the document into a straightened,
+top-down scan. Give `--out` to write a file and get its path back; omit it for base64 in
+`image_data` instead (same convention as `make-qr`). Unlike `document-bounds`, this is a
+production command: no document detected is a `bad_request`/`no_document_detected` error (exit
+`64`), since there's nothing to produce — feed the result to `macvis ocr` to read the flattened text:
+
+```yaml
+$ macvis rectify-document ./receipt.jpg --out ./receipt-flat.png
+path: ./receipt-flat.png
+width: 960
+height: 1310
+```
+
 `doctor` reports what runs here, plus the locale-derived OCR languages and (once `ask` is
 available) which languages it's ready to answer in right now:
 
@@ -247,6 +284,7 @@ ocr: available
 find: available
 sort-faces: available
 barcode: available
+document_bounds: available
 ask: "unavailable: needs_macos_27_sdk"
 ocr_languages:
   - ko-KR
@@ -267,7 +305,8 @@ though: Apple's API doesn't expose one, so `ask` follows the prompt's language r
 Two equivalent integrations — both run the same `VisionService` engine, so the output is identical.
 
 **MCP server (stdio)** — `macvis mcp` speaks stdio JSON-RPC and exposes `ocr` / `find` / `barcode` /
-`qr` / `make-qr` / `doctor` as tools (plus `ask` when the binary is built with the macOS 27 multimodal path):
+`qr` / `make-qr` / `document-bounds` / `rectify-document` / `doctor` as tools (plus `ask` when the
+binary is built with the macOS 27 multimodal path):
 
 ```json
 { "mcpServers": { "mac-vision": { "command": "/path/to/macvis", "args": ["mcp"] } } }

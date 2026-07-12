@@ -14,7 +14,8 @@ struct CLIHelpTests {
 
     @Test("every dispatchable command with flags has a usage string")
     func usageCoverage() {
-        for cmd in ["ocr", "find", "barcode", "qr", "make-qr", "ask", "sort-faces", "find-person", "doctor"] {
+        for cmd in ["ocr", "find", "barcode", "qr", "make-qr", "document-bounds", "rectify-document",
+                    "ask", "sort-faces", "find-person", "doctor"] {
             let u = CLIHelp.usage(for: cmd)
             #expect(u != nil, "missing usage for \(cmd)")
             #expect(u?.contains("macvis \(cmd)") == true, "usage for \(cmd) should name the command")

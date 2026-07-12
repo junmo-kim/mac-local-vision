@@ -127,7 +127,7 @@ enum MCPTools {
         // Capability-matched: only advertise `ask` when this binary was built with the
         // macOS 27 multimodal path. `request(for:)` still maps a direct `ask` call on any
         // build (→ structured needs_macos_27 error, not a bare "unknown tool").
-        var tools: [[String: Any]] = [ocr, find, barcode, qr, makeQR, doctor]
+        var tools: [[String: Any]] = [ocr, find, barcode, qr, makeQR, documentBounds, rectifyDocument, doctor]
         #if MACVIS_ASK_IMAGE
         tools.append(ask)
         #endif
@@ -290,6 +290,68 @@ enum MCPTools {
         ]
     }
 
+    static var documentBounds: [String: Any] {
+        [
+            "name": "document-bounds",
+            "description": """
+            Find the four corners of a document (receipt, page, card, ...) in a photo — the \
+            detect-only counterpart to `rectify-document`'s detect-and-flatten. Use this when \
+            you only need the boundary coordinates (e.g. to decide whether a photo actually \
+            contains a document before doing more work); use `rectify-document` when you want \
+            the flattened, perspective-corrected image itself. Returns `found: false` (not an \
+            error) when no document clears `minConfidence` — same detect-only semantics as \
+            `barcode`'s `code_count: 0`. Coordinate convention: top-left origin, physical \
+            pixels, matching `find`/`barcode`. When multiple document-like regions are present, \
+            reports the largest by area. Remote callers (non-Mac nodes): send the image as \
+            base64 in the `data` field instead of `path`.
+            """,
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "path": ["type": "string", "description": "Path to an image (png/jpg/heic/tiff/...) or a PDF. Required if `data` is not provided."],
+                    "data": ["type": "string", "description": "Base64-encoded image or PDF for remote (non-Mac) callers. Required if `path` is not provided. Takes precedence over `path` when both are supplied."],
+                    "minConfidence": ["type": "number", "description": "Drop a detection below this confidence (0..1). Default 0 (Vision's exact-zero \"not a document\" sentinel is always excluded regardless)."],
+                    "page": ["type": "integer", "description": "PDF page, 1-based. Default 1."],
+                    "scale": ["type": "number", "description": "PDF rasterization scale (2.0 ≈ 144 dpi). Default 2.0."],
+                    "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
+                ],
+                // `required` intentionally omitted — same path/data XOR as `ocr` (see its comment).
+            ],
+        ]
+    }
+
+    static var rectifyDocument: [String: Any] {
+        [
+            "name": "rectify-document",
+            "description": """
+            Flatten a photographed document: detects its boundary (same detection as \
+            `document-bounds`) then perspective-corrects and crops it into a straightened, \
+            top-down scan via CoreImage (CIPerspectiveCorrection) — the write counterpart to \
+            `document-bounds`'s read, mirroring `make-qr` vs `barcode`. Give `outPath` to write \
+            a PNG on this machine and get back its path plus dimensions; omit it (e.g. for \
+            remote/MCP callers without local filesystem access) to get the PNG back as base64 \
+            in `image_data` instead. Unlike `document-bounds` (where "no document" is a valid \
+            `found: false` outcome), this is a production command: if no document is detected \
+            it returns a structured `bad_request`/`no_document_detected` error, since there is \
+            nothing to rectify. Feed the result to `ocr` to read the flattened text. Remote \
+            callers (non-Mac nodes): send the image as base64 in the `data` field instead of `path`.
+            """,
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "path": ["type": "string", "description": "Path to an image (png/jpg/heic/tiff/...) or a PDF. Required if `data` is not provided."],
+                    "data": ["type": "string", "description": "Base64-encoded image or PDF for remote (non-Mac) callers. Required if `path` is not provided. Takes precedence over `path` when both are supplied."],
+                    "outPath": ["type": "string", "description": "Local file path to write the rectified PNG to. Omit to receive image_data (base64) instead."],
+                    "minConfidence": ["type": "number", "description": "Drop a detection below this confidence (0..1). Default 0 (Vision's exact-zero \"not a document\" sentinel is always excluded regardless)."],
+                    "page": ["type": "integer", "description": "PDF page, 1-based. Default 1."],
+                    "scale": ["type": "number", "description": "PDF rasterization scale (2.0 ≈ 144 dpi). Default 2.0."],
+                    "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
+                ],
+                // `required` intentionally omitted — same path/data XOR as `ocr` (see its comment).
+            ],
+        ]
+    }
+
     static var doctor: [String: Any] {
         [
             "name": "doctor",
@@ -367,6 +429,17 @@ enum MCPTools {
                 outPath: args["outPath"] as? String,
                 correctionLevel: args["correctionLevel"] as? String,
                 size: int(args["size"]))
+        case "document-bounds":
+            return VisionRequest(
+                op: "document-bounds", path: args["path"] as? String, data: args["data"] as? String,
+                minConfidence: number(args["minConfidence"]),
+                page: int(args["page"]), scale: number(args["scale"]))
+        case "rectify-document":
+            return VisionRequest(
+                op: "rectify-document", path: args["path"] as? String, data: args["data"] as? String,
+                minConfidence: number(args["minConfidence"]),
+                page: int(args["page"]), scale: number(args["scale"]),
+                outPath: args["outPath"] as? String)
         case "doctor":
             return VisionRequest(op: "doctor")
         default:
