@@ -159,11 +159,19 @@ enum VisionService {
         let result = try QRGenerator.generate(text: req.text ?? "", correctionLevel: correctionLevel, size: req.size)
         var fields: [(String, YAMLValue)]
         if let outPath = req.outPath, !outPath.isEmpty {
+            // Intentional curl-o-style overwrite (no collision guard): outPath is a single
+            // user-specified destination file, not a curated directory tree of generated
+            // artifacts like FaceEngine.writeClusters's symlink farm (which guards against
+            // deleting a bystander file it doesn't own) — re-running the same --out is the
+            // expected "regenerate this file" workflow.
             try result.png.write(to: URL(fileURLWithPath: outPath))
             fields = [("path", .string(outPath))]
         } else {
             fields = [("image_data", .string(result.png.base64EncodedString()))]
         }
+        // width/height (not image_width/image_height, unlike ocr/barcode) is unambiguous
+        // here: make-qr's output has no bounding-box concept at all, so there's no
+        // sibling "box vs whole image" pair to disambiguate within this op's own response.
         fields.append(contentsOf: [
             ("width", .int(result.width)), ("height", .int(result.height)),
             ("correction_level", .string(correctionLevel)),
