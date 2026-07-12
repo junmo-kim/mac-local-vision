@@ -310,7 +310,7 @@ enum MCPTools {
                 "properties": [
                     "path": ["type": "string", "description": "Path to an image (png/jpg/heic/tiff/...) or a PDF. Required if `data` is not provided."],
                     "data": ["type": "string", "description": "Base64-encoded image or PDF for remote (non-Mac) callers. Required if `path` is not provided. Takes precedence over `path` when both are supplied."],
-                    "minConfidence": ["type": "number", "description": "Drop a detection below this confidence (0..1). Default 0 (Vision's exact-zero \"not a document\" sentinel is always excluded regardless)."],
+                    "minConfidence": ["type": "number", "description": "Drop a detection below this confidence (0..1). Default 0.7 — empirically set above the false-positive confidence band Vision returns for blank bright backgrounds (measured up to ~0.6; real documents measure ~0.99). Vision's exact-zero \"not a document\" sentinel is always excluded regardless."],
                     "page": ["type": "integer", "description": "PDF page, 1-based. Default 1."],
                     "scale": ["type": "number", "description": "PDF rasterization scale (2.0 ≈ 144 dpi). Default 2.0."],
                     "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
@@ -342,7 +342,7 @@ enum MCPTools {
                     "path": ["type": "string", "description": "Path to an image (png/jpg/heic/tiff/...) or a PDF. Required if `data` is not provided."],
                     "data": ["type": "string", "description": "Base64-encoded image or PDF for remote (non-Mac) callers. Required if `path` is not provided. Takes precedence over `path` when both are supplied."],
                     "outPath": ["type": "string", "description": "Local file path to write the rectified PNG to. Omit to receive image_data (base64) instead."],
-                    "minConfidence": ["type": "number", "description": "Drop a detection below this confidence (0..1). Default 0 (Vision's exact-zero \"not a document\" sentinel is always excluded regardless)."],
+                    "minConfidence": ["type": "number", "description": "Drop a detection below this confidence (0..1). Default 0.7 — empirically set above the false-positive confidence band Vision returns for blank bright backgrounds (measured up to ~0.6; real documents measure ~0.99). Vision's exact-zero \"not a document\" sentinel is always excluded regardless."],
                     "page": ["type": "integer", "description": "PDF page, 1-based. Default 1."],
                     "scale": ["type": "number", "description": "PDF rasterization scale (2.0 ≈ 144 dpi). Default 2.0."],
                     "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],

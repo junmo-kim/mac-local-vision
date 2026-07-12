@@ -46,6 +46,21 @@ public struct RectifyResult: Sendable {
 /// requires a separate `CIPerspectiveCorrection` pass, which `rectify` layers on top of the
 /// same detection `detectBounds` uses (both funnel through `detectQuad` below).
 public enum DocumentEngine {
+    /// Default `minConfidence` for `document-bounds`/`rectify-document` (hostile-review fix,
+    /// 2026-07-12). `Geometry.pickLargestQuad`'s exact-zero-confidence sentinel filter only
+    /// covers `VNDetectDocumentSegmentationRequest`'s "no document" response for *some* gray
+    /// values — empirically swept on this machine (step 0.01 across gray 0.60...1.00), bright
+    /// blank scenes (plain white paper, a whiteboard, an overexposed photo) return a
+    /// **false-positive confidence band from ~0.54 up to a measured peak of 0.598** (at gray
+    /// 0.74), never landing on exactly 0. A `minConfidence: 0.0` default (the prior value)
+    /// therefore let a blank bright background masquerade as a full-frame "detected document".
+    /// Real document fixtures (flat, rotated, perspective-warped) measured ~0.99 in the same
+    /// sweep, so `0.7` sits with ~0.10 margin above the false-positive ceiling and ~0.29 margin
+    /// below genuine detections — comfortably inside the gap. Callers can still override via
+    /// `--min-confidence`/`minConfidence` (e.g. to accept lower-confidence detections at their
+    /// own risk); this only changes what happens when they don't.
+    public static let defaultMinConfidence: Double = 0.7
+
     /// Real capability probe for `doctor` (mirrors `OCREngine.textVisionAvailable`/
     /// `BarcodeEngine.barcodeVisionAvailable`). `CIPerspectiveCorrection` (the other half of
     /// `rectify`) is a plain CoreImage filter with no availability gate (plan §2.3), so this
@@ -76,7 +91,7 @@ public enum DocumentEngine {
     // MARK: - detectBounds (path + data)
 
     public static func detectBounds(
-        path: String, minConfidence: Double = 0.0, page: Int = 1, scale: Double = 2.0
+        path: String, minConfidence: Double = defaultMinConfidence, page: Int = 1, scale: Double = 2.0
     ) throws -> DocumentBoundsResult {
         let (cgImage, width, height) = try OCREngine.loadImage(path: path, page: page, scale: scale)
         let quad = try detectQuad(cgImage: cgImage, minConfidence: minConfidence)
@@ -84,7 +99,7 @@ public enum DocumentEngine {
     }
 
     public static func detectBounds(
-        data: Data, minConfidence: Double = 0.0, page: Int = 1, scale: Double = 2.0
+        data: Data, minConfidence: Double = defaultMinConfidence, page: Int = 1, scale: Double = 2.0
     ) throws -> DocumentBoundsResult {
         let (cgImage, width, height) = try OCREngine.loadImage(data: data, page: page, scale: scale)
         let quad = try detectQuad(cgImage: cgImage, minConfidence: minConfidence)
@@ -108,14 +123,14 @@ public enum DocumentEngine {
     // MARK: - rectify (path + data)
 
     public static func rectify(
-        path: String, minConfidence: Double = 0.0, page: Int = 1, scale: Double = 2.0
+        path: String, minConfidence: Double = defaultMinConfidence, page: Int = 1, scale: Double = 2.0
     ) throws -> RectifyResult {
         let (cgImage, width, height) = try OCREngine.loadImage(path: path, page: page, scale: scale)
         return try rectifyCore(cgImage: cgImage, width: width, height: height, minConfidence: minConfidence)
     }
 
     public static func rectify(
-        data: Data, minConfidence: Double = 0.0, page: Int = 1, scale: Double = 2.0
+        data: Data, minConfidence: Double = defaultMinConfidence, page: Int = 1, scale: Double = 2.0
     ) throws -> RectifyResult {
         let (cgImage, width, height) = try OCREngine.loadImage(data: data, page: page, scale: scale)
         return try rectifyCore(cgImage: cgImage, width: width, height: height, minConfidence: minConfidence)

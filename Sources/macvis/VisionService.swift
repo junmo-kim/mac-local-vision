@@ -209,11 +209,11 @@ enum VisionService {
             switch input {
             case .path(let p):
                 r = try DocumentEngine.detectBounds(
-                    path: p, minConfidence: req.minConfidence ?? 0.0,
+                    path: p, minConfidence: req.minConfidence ?? DocumentEngine.defaultMinConfidence,
                     page: req.page ?? 1, scale: req.scale ?? 2.0)
             case .data(let d):
                 r = try DocumentEngine.detectBounds(
-                    data: d, minConfidence: req.minConfidence ?? 0.0,
+                    data: d, minConfidence: req.minConfidence ?? DocumentEngine.defaultMinConfidence,
                     page: req.page ?? 1, scale: req.scale ?? 2.0)
             }
             guard let corners = r.corners, let confidence = r.confidence else {
@@ -251,11 +251,11 @@ enum VisionService {
             switch input {
             case .path(let p):
                 r = try DocumentEngine.rectify(
-                    path: p, minConfidence: req.minConfidence ?? 0.0,
+                    path: p, minConfidence: req.minConfidence ?? DocumentEngine.defaultMinConfidence,
                     page: req.page ?? 1, scale: req.scale ?? 2.0)
             case .data(let d):
                 r = try DocumentEngine.rectify(
-                    data: d, minConfidence: req.minConfidence ?? 0.0,
+                    data: d, minConfidence: req.minConfidence ?? DocumentEngine.defaultMinConfidence,
                     page: req.page ?? 1, scale: req.scale ?? 2.0)
             }
             var fields: [(String, YAMLValue)]

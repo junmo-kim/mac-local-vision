@@ -78,12 +78,33 @@ struct DocumentFixtureTests {
         return ctx.makeImage()!
     }
 
-    /// A blank neutral-gray canvas with no document-like shape at all.
+    /// A blank neutral-gray canvas with no document-like shape at all. `VNDetectDocumentSegmentationRequest`
+    /// happens to report confidence exactly 0.0 for this particular gray value (0.4/0.4/0.42) —
+    /// see `renderBrightBlankFixture` below for the (much more common) bright-background regime
+    /// where that isn't true.
     static func renderBlankFixture(size: Int = 600) -> CGImage {
         let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8,
                             bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
         ctx.setFillColor(CGColor(red: 0.4, green: 0.4, blue: 0.42, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: size, height: size))
+        return ctx.makeImage()!
+    }
+
+    /// A blank bright/overexposed-looking canvas with no document-like shape — the false-positive
+    /// regime that `renderBlankFixture`'s single gray value (confidence exactly 0.0) fails to
+    /// cover. Empirically swept on this machine (`/tmp/macvis-threshold-spike/spike.swift`,
+    /// 2026-07-12, step 0.01 across gray 0.60...1.00): confidence is 0.0 up through gray 0.73,
+    /// then jumps to a false-positive band peaking at **0.598 at gray 0.74** and decaying smoothly
+    /// to ~0.54 at pure white (1.0) — never returning to 0 anywhere in that range. Off-white color
+    /// tints (warm paper ~0.587, cool whiteboard ~0.586) land in the same band. `gray: 0.74` is
+    /// the empirically worst (highest-confidence) point in that band, so it's the strongest single
+    /// fixture to pin the false-positive-rejection regression to.
+    static func renderBrightBlankFixture(size: Int = 600, gray: CGFloat = 0.74) -> CGImage {
+        let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8,
+                            bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(red: gray, green: gray, blue: gray, alpha: 1))
         ctx.fill(CGRect(x: 0, y: 0, width: size, height: size))
         return ctx.makeImage()!
     }
@@ -165,6 +186,18 @@ struct DocumentFixtureTests {
         #expect(result.imageWidth == 600 && result.imageHeight == 600)
     }
 
+    @Test("found: false (not a false positive) on a bright/overexposed blank background — hostile-review fix: the exact-zero sentinel alone doesn't cover this regime")
+    func brightBlankBackgroundIsNotFalsePositive() throws {
+        let image = Self.renderBrightBlankFixture()
+        let path = Self.writePNG(image)
+        defer { try? FileManager.default.removeItem(atPath: path) }
+
+        let result = try DocumentEngine.detectBounds(path: path)
+        #expect(result.corners == nil)
+        #expect(result.confidence == nil)
+        #expect(result.imageWidth == 600 && result.imageHeight == 600)
+    }
+
     @Test("detectBounds(data:) matches detectBounds(path:) for the same image")
     func detectsFromData() throws {
         let fixture = Self.makePerspectiveFixture(text: "DATA PATH")
@@ -199,6 +232,22 @@ struct DocumentFixtureTests {
     @Test("rectify throws bad_request/no_document_detected when no document is present")
     func rectifyThrowsWhenNoDocument() throws {
         let image = Self.renderBlankFixture(size: 600)
+        let path = Self.writePNG(image)
+        defer { try? FileManager.default.removeItem(atPath: path) }
+
+        do {
+            _ = try DocumentEngine.rectify(path: path)
+            Issue.record("expected throw")
+        } catch {
+            let se = error as? ServiceError
+            #expect(se?.name == "bad_request")
+            #expect(se?.reason == "no_document_detected")
+        }
+    }
+
+    @Test("rectify throws bad_request/no_document_detected on a bright/overexposed blank background")
+    func rectifyThrowsOnBrightBlankBackground() throws {
+        let image = Self.renderBrightBlankFixture()
         let path = Self.writePNG(image)
         defer { try? FileManager.default.removeItem(atPath: path) }
 
