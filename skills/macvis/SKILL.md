@@ -37,6 +37,7 @@ user_invocable: true
 | Flatten/straighten a photographed document into a scan | `macvis rectify-document <path> --out <path>` |
 | Extract a document's title/paragraphs/tables/lists with layout preserved | `macvis document-ocr <path>` |
 | To *interpret* an image (describe, reason, summarize) — macOS 27 | `macvis ask <path> --prompt "<question>"` |
+| To extract structured JSON fields from an image (schema-constrained) — macOS 27 | `macvis ask <path> --prompt "<question>" --schema <path\|inline-json>` |
 | Group photos by person | `macvis sort-faces <dir>` |
 | Find photos matching a given face | `macvis find-person --target <face.jpg> --dir <dir>` |
 | Check what runs on this machine | `macvis doctor` |
@@ -60,6 +61,7 @@ macvis make-qr "https://example.com" --out ./qr.png  # write a scannable QR PNG
 macvis document-bounds ./receipt.jpg                  # find a document's 4 corners
 macvis rectify-document ./receipt.jpg --out ./flat.png # flatten a photographed document
 macvis document-ocr ./invoice.png                    # title/paragraphs/tables/lists, structured
+macvis ask ./receipt.png --prompt "extract the fields" --schema ./receipt-schema.json  # structured JSON answer
 macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photos by person
 ```
 

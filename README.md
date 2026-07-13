@@ -136,11 +136,23 @@ swift build -c release && cp .build/release/macvis /usr/local/bin/
 > eligible, internal-boot installs, so `ask` tracks the platform: it graduates from Beta as macOS 27
 > ships. The rest of macvis (`ocr` / `find` / `sort-faces` / `mcp`) is stable on macOS 26 today.
 
+> **`ask --schema`** forces a structured JSON answer via Apple's Guided Generation
+> (`session.respond(to:schema:)`/`DynamicGenerationSchema`, available since the ordinary macOS 26
+> SDK — independent of the macOS-27-only multimodal image path). Give it a JSON Schema (a file
+> path, or inline JSON) and `answer` comes back as structured data instead of free text. Supports
+> an MVP subset — `object` / `string` (+ `enum`) / `integer` / `number` / `boolean` / `array`
+> (single-item schema) / `required` — deliberately not `$ref` / `oneOf` / `allOf` / `not` / `pattern` /
+> `$defs`, which are rejected with `bad_request`/`unsupported_schema_feature` before any model
+> call, rather than silently ignored. Schema mapping is pure logic, fully independent of the model
+> call itself — a malformed `--schema` is rejected (`bad_request`/`invalid_schema`, exit `64`)
+> without ever touching FoundationModels, so it can't be the thing that reaches `ask`'s
+> crash-prone real-model-call path.
+
 ## Build & test
 
 ```bash
 swift build -c release       # binary at .build/release/macvis
-swift test                   # pure logic + ask plumbing + Vision OCR fixtures
+swift test                   # pure logic + ask plumbing + JSON Schema mapping + Vision OCR fixtures
 ```
 
 > Building the `ask` path against real macOS 27 APIs needs the Xcode 27 SDK; the
@@ -161,6 +173,7 @@ macvis document-bounds ./receipt.jpg                     # find a document's 4 c
 macvis rectify-document ./receipt.jpg --out ./flat.png  # flatten a photographed document
 macvis document-ocr ./invoice.png                        # title/paragraphs/tables/lists, structured
 macvis ask ./design.png --prompt "main theme color?"    # Beta — needs macOS 27 (Beta)
+macvis ask ./receipt.png --prompt "extract the fields" --schema ./receipt-schema.json  # structured JSON, Guided Generation
 macvis doctor                                           # which modes work here
 ```
 

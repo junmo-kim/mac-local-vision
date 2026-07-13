@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+Adds `macvis ask --schema <path|json>` — forces a structured JSON answer via Apple's Guided
+Generation (`session.respond(to:schema:)`/`DynamicGenerationSchema`), instead of `ask`'s usual
+free text. Give it a JSON Schema (a file path, or inline JSON) describing the fields you want
+(e.g. `{merchant, total, date}` extracted from a receipt) and `answer` comes back as structured
+data rather than one string. Supports an MVP subset — `object` / `string` (+ `enum`) / `integer`
+/ `number` / `boolean` / `array` (single-item schema) / `required` — deliberately not `$ref` /
+`oneOf` / `allOf` / `not` / `pattern` / `$defs`, which are rejected as `bad_request`/`unsupported_schema_feature`
+rather than silently ignored. The JSON-Schema-to-`GenerationSchema` mapping
+(`JSONSchemaMapper`) is pure logic with zero model dependency — a malformed schema is rejected
+(`bad_request`/`invalid_schema`, exit `64`) before `AFMEngine.ask` is ever called, and the
+existing `probeAskAvailability()` pre-flight gate (the fix for the real SIGSEGV crash on
+macOS 27 Beta when the model isn't ready) runs in the exact same position regardless of whether
+a schema was requested — this feature adds no new path that could reach the model unguarded.
+Exposed on the CLI (`--schema`) and as the MCP `ask` tool's `schema` argument (a native JSON
+object, no string-escaping needed).
+
 Fixes a deadlock in `ocr`/`find`/`sort-faces`/`find-person` (and preventively
 `barcode`/`qr`/`document-bounds`/`rectify-document`) when handled concurrently — e.g. via
 `macvis serve` fielding overlapping MCP requests. `VNImageRequestHandler.perform()` blocks
