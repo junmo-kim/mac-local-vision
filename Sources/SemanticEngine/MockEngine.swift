@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels  // GenerationSchema — see SemanticEngine.swift's import comment
 
 /// CI / unit-test engine. Exercises the `ask` plumbing without any model.
 public struct MockEngine: SemanticEngine {
@@ -9,7 +10,7 @@ public struct MockEngine: SemanticEngine {
     }
 
     public func ask(imagePath: String, prompt: String, stream: Bool,
-                    page: Int, scale: Double) async throws -> AskOutcome {
+                    page: Int, scale: Double, schema: GenerationSchema?) async throws -> AskOutcome {
         AskOutcome(text: response, compute: .onDevice)
     }
 }

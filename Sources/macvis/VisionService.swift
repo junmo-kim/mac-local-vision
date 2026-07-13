@@ -1,6 +1,7 @@
 import Foundation
 import VisionCore
 import SemanticEngine
+import FoundationModels  // GenerationSchema — see SemanticEngine.swift's import comment
 
 /// The single engine seam. CLI commands and the MCP server both go through here, so
 /// output is identical across interfaces.
@@ -413,12 +414,37 @@ enum VisionService {
             throw ServiceError(name: "bad_request", reason: "missing_prompt",
                                hint: "ask requires a natural-language prompt", exitCode: ExitCode.usage.rawValue)
         }
+        // Schema mapping is pure logic — fully independent of AFMEngine/probeAskAvailability
+        // (see JSONSchemaMapper's doc comment) — so a malformed --schema is rejected here,
+        // before AFMEngine.ask is ever called, same as the missing-prompt check above.
+        let schema: GenerationSchema?
+        if let schemaText = req.schema, !schemaText.isEmpty {
+            schema = try JSONSchemaMapper.map(schemaText)
+        } else {
+            schema = nil
+        }
         do {
             let outcome = try await AFMEngine().ask(imagePath: path, prompt: prompt,
                                                     stream: req.stream ?? false,
-                                                    page: req.page ?? 1, scale: req.scale ?? 2.0)
+                                                    page: req.page ?? 1, scale: req.scale ?? 2.0,
+                                                    schema: schema)
+            let answer: YAMLValue
+            if schema != nil {
+                // Guided Generation: outcome.text is GeneratedContent.jsonString — decode it
+                // into structured data instead of wrapping it as one opaque string.
+                do {
+                    answer = try YAMLValue.parseJSON(outcome.text)
+                } catch {
+                    throw ServiceError(name: "ask_failed", reason: "invalid_model_json_output",
+                                       detail: "the model's schema-constrained answer wasn't valid JSON: \(error)",
+                                       hint: "retry — if this repeats, the schema may be too complex for the model to honor reliably.",
+                                       exitCode: ExitCode.runtimeError.rawValue)
+                }
+            } else {
+                answer = .string(outcome.text)
+            }
             return ServiceResult(.dict([
-                ("answer", .string(outcome.text)),
+                ("answer", answer),
                 ("compute", .string(outcome.compute.rawValue)),  // always on-device (PCC not used — see AFMEngine.ask)
             ]))
         } catch let e as SemanticError {

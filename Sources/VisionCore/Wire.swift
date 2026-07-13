@@ -26,6 +26,11 @@ public struct VisionRequest: Codable, Sendable {
     public var correctionLevel: String? // make-qr: L | M | Q | H (default M)
     public var size: Int?              // make-qr: per-module pixel magnification (default 10)
     public var top: Int?               // classify: max labels to return (default 20 — see ClassifyEngine)
+    // ask: JSON Schema text (MVP subset — see JSONSchemaMapper) requesting Guided Generation.
+    // Raw text on the wire either way: the CLI reads a --schema file or takes it inline, and
+    // the MCP server re-serializes its native JSON-object `schema` argument into this same
+    // field, so VisionService.ask has a single mapping code path regardless of caller.
+    public var schema: String?
 
     public init(op: String, path: String? = nil, data: String? = nil,
                 target: String? = nil, prompt: String? = nil,
@@ -33,7 +38,8 @@ public struct VisionRequest: Codable, Sendable {
                 minConfidence: Double? = nil, languages: [String]? = nil,
                 page: Int? = nil, scale: Double? = nil, format: String? = nil,
                 symbologies: [String]? = nil, text: String? = nil, outPath: String? = nil,
-                correctionLevel: String? = nil, size: Int? = nil, top: Int? = nil) {
+                correctionLevel: String? = nil, size: Int? = nil, top: Int? = nil,
+                schema: String? = nil) {
         self.op = op; self.path = path; self.data = data
         self.target = target; self.prompt = prompt
         self.fast = fast; self.words = words; self.boxes = boxes; self.stream = stream
@@ -43,6 +49,7 @@ public struct VisionRequest: Codable, Sendable {
         self.text = text; self.outPath = outPath
         self.correctionLevel = correctionLevel; self.size = size
         self.top = top
+        self.schema = schema
     }
 }
 

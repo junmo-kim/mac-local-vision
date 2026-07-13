@@ -6,7 +6,7 @@ struct AskPlumbingTests {
     @Test("MockEngine returns its stub answer as an AskOutcome")
     func mockFlow() async throws {
         let out = try await MockEngine(response: "stub answer")
-            .ask(imagePath: "/x.png", prompt: "q", stream: false, page: 1, scale: 2.0)
+            .ask(imagePath: "/x.png", prompt: "q", stream: false, page: 1, scale: 2.0, schema: nil)
         #expect(out.text == "stub answer")
         #expect(out.compute == .onDevice)
     }

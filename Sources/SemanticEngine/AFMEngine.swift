@@ -27,7 +27,7 @@ public struct AFMEngine: SemanticEngine {
     public init() {}
 
     public func ask(imagePath: String, prompt: String, stream: Bool,
-                    page: Int, scale: Double) async throws -> AskOutcome {
+                    page: Int, scale: Double, schema: GenerationSchema?) async throws -> AskOutcome {
         // Originally this let the framework's thrown error decide eligibility, without
         // pre-judging from the availability probe. On macOS 27 Beta (26A5378j) that
         // assumption doesn't hold: calling LanguageModelSession/Attachment while the model
@@ -74,7 +74,22 @@ public struct AFMEngine: SemanticEngine {
         let session = LanguageModelSession()  // on-device SystemLanguageModel.default
         do {
             let text: String
-            if stream {
+            // `schema` (built by JSONSchemaMapper, entirely upstream and independent of this
+            // call) selects Guided Generation. Either way this only picks which `respond`/
+            // `streamResponse` overload runs — the gate above already ran identically for
+            // both, so there is no schema-only path that reaches the model unguarded.
+            if let schema {
+                if stream {
+                    var latestJSON = ""
+                    let responseStream = session.streamResponse(schema: schema) { prompt; Attachment(image) }
+                    for try await chunk in responseStream {
+                        latestJSON = chunk.content.jsonString  // snapshot-accumulating stream
+                    }
+                    text = latestJSON
+                } else {
+                    text = try await session.respond(schema: schema) { prompt; Attachment(image) }.content.jsonString
+                }
+            } else if stream {
                 var latest = ""
                 let responseStream = session.streamResponse { prompt; Attachment(image) }
                 for try await chunk in responseStream {
