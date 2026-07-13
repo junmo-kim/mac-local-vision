@@ -15,6 +15,74 @@ public indirect enum YAMLValue: Sendable {
     case dict([(String, YAMLValue)])
 }
 
+extension YAMLValue: Equatable {
+    // Manual conformance: `.dict`'s payload is `[(String, YAMLValue)]` — a tuple array —
+    // and plain tuples can't conform to Equatable, so auto-synthesis doesn't apply here.
+    // Order-sensitive, matching the type's own "dictionaries preserve insertion order" contract.
+    public static func == (lhs: YAMLValue, rhs: YAMLValue) -> Bool {
+        switch (lhs, rhs) {
+        case (.string(let a), .string(let b)): return a == b
+        case (.int(let a), .int(let b)): return a == b
+        case (.double(let a), .double(let b)): return a == b
+        case (.bool(let a), .bool(let b)): return a == b
+        case (.null, .null): return true
+        case (.array(let a), .array(let b)): return a == b
+        case (.dict(let a), .dict(let b)):
+            guard a.count == b.count else { return false }
+            return zip(a, b).allSatisfy { $0.0 == $1.0 && $0.1 == $1.1 }
+        default: return false
+        }
+    }
+}
+
+/// Thrown by `YAMLValue.parseJSON` on malformed input. Domain-neutral (this is a general
+/// JSON→YAMLValue decoder, not tied to any one caller's exit-code/error-envelope
+/// conventions) — callers translate it into their own structured error as needed.
+public struct JSONParseError: Error, Sendable {
+    public let detail: String
+}
+
+public extension YAMLValue {
+    /// Decode JSON text into a `YAMLValue` tree — the inverse of `render(as: .json)`. Used
+    /// to embed an already-JSON `ask --schema` answer (`GeneratedContent.jsonString`) into
+    /// the response tree as structured data rather than one opaque string.
+    static func parseJSON(_ text: String) throws -> YAMLValue {
+        guard let data = text.data(using: .utf8) else {
+            throw JSONParseError(detail: "not valid UTF-8 text")
+        }
+        let obj: Any
+        do {
+            obj = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        } catch {
+            throw JSONParseError(detail: error.localizedDescription)
+        }
+        return try convertJSONValue(obj)
+    }
+}
+
+private func convertJSONValue(_ value: Any) throws -> YAMLValue {
+    if value is NSNull { return .null }
+    if let num = value as? NSNumber {
+        // NSNumber conflates JSON booleans and numbers on Darwin — a bare `as? Bool` cast
+        // can silently misfire on numeric 0/1, so check the CFBoolean type identity first.
+        if CFGetTypeID(num) == CFBooleanGetTypeID() {
+            return .bool(num.boolValue)
+        }
+        if let i = Int(exactly: num) {
+            return .int(i)
+        }
+        return .double(num.doubleValue)
+    }
+    if let s = value as? String { return .string(s) }
+    if let arr = value as? [Any] { return .array(try arr.map(convertJSONValue)) }
+    if let dict = value as? [String: Any] {
+        // JSONSerialization doesn't preserve key order — sort for deterministic output
+        // (same tradeoff JSONSchemaMapper makes on the way in).
+        return .dict(try dict.keys.sorted().map { key in (key, try convertJSONValue(dict[key]!)) })
+    }
+    throw JSONParseError(detail: "unrecognized JSON value type: \(type(of: value))")
+}
+
 public enum OutputFormat: String, Sendable {
     case yaml
     case json

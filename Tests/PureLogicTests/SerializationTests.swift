@@ -81,3 +81,47 @@ struct SerializationTests {
         #expect(value.render(as: .yaml) == expected)
     }
 }
+
+/// `parseJSON` — the inverse of `render(as: .json)`, used to embed a schema-constrained
+/// `ask` answer (itself already JSON, from `GeneratedContent.jsonString`) into the response
+/// tree as structured data instead of one opaque string.
+@Suite("Serialization — JSON → YAMLValue parsing")
+struct SerializationParseJSONTests {
+    @Test("object with mixed scalar types")
+    func objectScalars() throws {
+        let value = try YAMLValue.parseJSON(#"{"merchant":"Acme","total":12.5,"count":3,"paid":true,"note":null}"#)
+        guard case .dict(let pairs) = value else { Issue.record("expected .dict"); return }
+        let asDict = Dictionary(uniqueKeysWithValues: pairs)
+        #expect(asDict["merchant"] == .string("Acme"))
+        #expect(asDict["total"] == .double(12.5))
+        #expect(asDict["count"] == .int(3))
+        #expect(asDict["paid"] == .bool(true))
+        #expect(asDict["note"] == .null)
+    }
+
+    @Test("whole-number JSON floats decode as .int, not .double")
+    func wholeNumberIsInt() throws {
+        #expect(try YAMLValue.parseJSON(#"{"n":3}"#) == .dict([("n", .int(3))]))
+    }
+
+    @Test("nested array and object")
+    func nestedArrayAndObject() throws {
+        let value = try YAMLValue.parseJSON(#"{"tags":["a","b"],"address":{"city":"Seoul"}}"#)
+        #expect(value == .dict([
+            ("address", .dict([("city", .string("Seoul"))])),
+            ("tags", .array([.string("a"), .string("b")])),
+        ]))
+    }
+
+    @Test("bare JSON scalar (not an object) round-trips")
+    func bareScalar() throws {
+        #expect(try YAMLValue.parseJSON("42") == .int(42))
+        #expect(try YAMLValue.parseJSON("true") == .bool(true))
+        #expect(try YAMLValue.parseJSON(#""hi""#) == .string("hi"))
+    }
+
+    @Test("malformed JSON throws")
+    func malformed() {
+        #expect(throws: (any Error).self) { try YAMLValue.parseJSON("{not json") }
+    }
+}
