@@ -66,21 +66,11 @@ public enum ClassifyEngine {
 
     /// Every `VNClassifyImageRequest` invocation in this process — both the real `classify`
     /// path and the `doctor` probe below — funnels through this one dedicated queue, so no
-    /// two ever run concurrently (see the type doc for why that's required).
-    private static let visionQueue = DispatchQueue(label: "mac-local-vision.classify")
-
-    /// Runs `work` on `visionQueue` and suspends the caller (not blocks) until it completes.
-    private static func runSerialized<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
-            visionQueue.async {
-                do {
-                    continuation.resume(returning: try work())
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
+    /// two ever run concurrently (see `VisionSerialQueue`'s type doc for why that's required).
+    /// Extracted to `VisionSerialQueue` (plan `2026-07-13-macvis-vision-concurrency-fix`) so
+    /// `OCREngine`/`FaceEngine`/`BarcodeEngine`/`DocumentEngine` can reuse the pattern this
+    /// engine originated — pure Tidy First extraction, no behavior change here.
+    private static let visionQueue = VisionSerialQueue(label: "mac-local-vision.classify")
 
     /// Real capability probe for `doctor` (see `OCREngine.textVisionAvailable` for the
     /// pattern this mirrors): does `VNClassifyImageRequest` actually execute here? Runs
@@ -93,7 +83,7 @@ public enum ClassifyEngine {
     /// call racing an in-flight `classify` call can't hit the same deadlock.
     public static func classifyVisionAvailable() async -> Bool {
         if let cached = _probe.withLock({ $0 }) { return cached }
-        let ok = (try? await runSerialized(probe)) ?? false
+        let ok = (try? await visionQueue.run(probe)) ?? false
         _probe.withLock { $0 = ok }
         return ok
     }
@@ -147,7 +137,7 @@ public enum ClassifyEngine {
     ) async throws -> ClassificationScanResult {
         // Map to the Sendable ClassificationResult *inside* the closure, before crossing
         // back over the queue boundary — VNClassificationObservation itself isn't Sendable.
-        let results: [ClassificationResult] = try await runSerialized {
+        let results: [ClassificationResult] = try await visionQueue.run {
             let request = makeRequest()
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             try handler.perform([request])
