@@ -25,7 +25,8 @@ let package = Package(
         // Pure logic only — runs on any macOS runner (and conceptually Linux).
         .testTarget(name: "PureLogicTests", dependencies: ["VisionCore"]),
         // `ask` plumbing (MockEngine / AskOutcome / SemanticError / mapCallError) without a model.
-        .testTarget(name: "SemanticEngineTests", dependencies: ["SemanticEngine"]),
+        // VisionCore dependency: JSONSchemaMapperTests asserts on ServiceError/ExitCode directly.
+        .testTarget(name: "SemanticEngineTests", dependencies: ["SemanticEngine", "VisionCore"]),
         // Tier ②: Vision-bound OCR/find against rendered fixtures (macOS-gated).
         .testTarget(name: "VisionTests", dependencies: ["VisionCore"]),
     ]
