@@ -20,7 +20,7 @@ public enum CLIHelp {
         "make-qr": "usage: macvis make-qr <text> [--out <path>] [--correction-level L|M|Q|H] [--size N (px/module)] [--format yaml|json]",
         "document-bounds": "usage: macvis document-bounds <image|pdf> [--min-confidence N] [--page N] [--scale S] [--format yaml|json]",
         "rectify-document": "usage: macvis rectify-document <image|pdf> [--out <path>] [--min-confidence N] [--page N] [--scale S] [--format yaml|json]",
-        "ask": "usage: macvis ask <image|pdf> --prompt <text> [--stream] [--page N] [--scale S] [--format yaml|json]   (Beta — needs macOS 27)",
+        "ask": "usage: macvis ask <image|pdf> --prompt <text> [--stream] [--schema <path|json>] [--page N] [--scale S] [--format yaml|json]   (Beta — needs macOS 27)",
         "sort-faces": "usage: macvis sort-faces <dir> [--output-dir DIR] [--threshold F] [--format yaml|json]",
         "find-person": "usage: macvis find-person --target <image> [--dir DIR] [--threshold F] [--format yaml|json]",
         "doctor": "usage: macvis doctor [--format yaml|json]",

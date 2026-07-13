@@ -447,6 +447,16 @@ enum MCPTools {
                 "properties": [
                     "path": ["type": "string", "description": "Path to an image (png/jpg/heic/...) or a PDF."],
                     "prompt": ["type": "string", "description": "The question to ask about the image."],
+                    "schema": [
+                        "type": "object",
+                        "description": """
+                        Optional JSON Schema to force a structured answer (Guided Generation) instead of \
+                        free text — pass it as a native JSON object, no string-escaping needed. Supported \
+                        MVP subset: object/string(+enum)/integer/number/boolean/array(single-item-schema)/ \
+                        required. Unsupported ($ref/oneOf/allOf/not/pattern/$defs) is rejected with \
+                        bad_request/unsupported_schema_feature before any model call.
+                        """,
+                    ],
                     "page": ["type": "integer", "description": "PDF page, 1-based. Default 1."],
                     "scale": ["type": "number", "description": "PDF rasterization scale (2.0 ≈ 144 dpi). Default 2.0."],
                     "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
@@ -475,7 +485,8 @@ enum MCPTools {
         case "ask":
             return VisionRequest(
                 op: "ask", path: args["path"] as? String, prompt: args["prompt"] as? String,
-                page: int(args["page"]), scale: number(args["scale"]))
+                page: int(args["page"]), scale: number(args["scale"]),
+                schema: jsonString(args["schema"]))
         case "barcode":
             return VisionRequest(
                 op: "barcode", path: args["path"] as? String, data: args["data"] as? String,
@@ -528,5 +539,16 @@ enum MCPTools {
     private static func int(_ v: Any?) -> Int? {
         if let n = v as? NSNumber { return n.intValue }
         return nil
+    }
+    /// Re-serializes `ask`'s `schema` arg — a native `[String: Any]` JSON object per its
+    /// declared `inputSchema` ("type": "object"), decoded by the stdio JSON-RPC layer —
+    /// back into JSON text, so it funnels through the same `VisionRequest.schema: String?`
+    /// wire field / `JSONSchemaMapper` path the CLI uses (one mapping code path either way).
+    private static func jsonString(_ v: Any?) -> String? {
+        guard let dict = v as? [String: Any],
+              let data = try? JSONSerialization.data(withJSONObject: dict) else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
     }
 }

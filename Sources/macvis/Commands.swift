@@ -223,9 +223,38 @@ enum AskCommand {
         }
         let req = VisionRequest(op: "ask", path: path, prompt: prompt,
                                 stream: parsed.flag("stream"),
-                                page: try optInt(parsed, "page"), scale: try optDouble(parsed, "scale"))
+                                page: try optInt(parsed, "page"), scale: try optDouble(parsed, "scale"),
+                                schema: try resolveSchemaOption(parsed.option("schema")))
         return await runService(req, format: format)
     }
+}
+
+/// `--schema` accepts either a path to a JSON Schema file or the schema inline as raw JSON
+/// text — a file that happens to exist wins (matches the plan's "path or inline" contract).
+/// The actual schema validation/mapping happens later, in `JSONSchemaMapper` (pure logic,
+/// no model call) — this just resolves *where the text comes from*.
+func resolveSchemaOption(_ raw: String?) throws -> String? {
+    guard let raw else { return nil }  // --schema absent → free text (backward-compat)
+    if FileManager.default.fileExists(atPath: raw) {
+        let contents: String
+        do {
+            contents = try String(contentsOfFile: raw, encoding: .utf8)
+        } catch {
+            throw CLIError(message: "could not read --schema file \(raw): \(error)")
+        }
+        // An empty/blank schema file means the caller asked for structured output but gave
+        // no usable schema — fail loudly instead of silently falling back to free text.
+        guard !contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CLIError(message: "--schema file \(raw) is empty")
+        }
+        return contents
+    }
+    // Inline JSON. A blank value (`--schema ""` / `--schema "   "`) is the inline twin of the
+    // empty-file case above — reject it rather than silently produce free text.
+    guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        throw CLIError(message: "--schema was given but is empty")
+    }
+    return raw
 }
 
 // MARK: - doctor
