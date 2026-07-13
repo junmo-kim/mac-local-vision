@@ -172,5 +172,15 @@ struct ConcurrencyTests {
             _ = try await DocumentEngine.detectBounds(path: path)
         }
     }
+
+    @Test("DocumentOCR: 15 concurrent recognize() calls all complete (safety confirmation — already Swift-native async via RecognizeDocumentsRequest.perform(on:), not modified by this plan)")
+    func documentOCRConcurrencyDoesNotDeadlock() async throws {
+        let img = Self.renderDocumentFixture(width: 800, height: 1000)
+        let path = Self.writePNG(img, tag: "dococr")
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        await Self.assertNoDeadlock(concurrency: 15, timeoutSeconds: 20) {
+            _ = try await DocumentOCREngine.recognize(path: path)
+        }
+    }
 }
 #endif
