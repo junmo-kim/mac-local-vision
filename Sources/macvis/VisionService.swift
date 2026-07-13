@@ -12,11 +12,11 @@ enum VisionService {
         case "doctor": return ServiceResult(await doctor())
         case "ask":    return try await ask(req)
         case "ping":   return ServiceResult(.dict([("ok", .bool(true))]))
-        case "barcode": return try barcode(req)
-        case "qr": return try qr(req)
+        case "barcode": return try await barcode(req)
+        case "qr": return try await qr(req)
         case "make-qr": return try generateQR(req)
-        case "document-bounds": return try documentBounds(req)
-        case "rectify-document": return try rectifyDocument(req)
+        case "document-bounds": return try await documentBounds(req)
+        case "rectify-document": return try await rectifyDocument(req)
         case "document-ocr": return try await documentOCR(req)
         case "classify": return try await classify(req)
         default:
@@ -112,18 +112,18 @@ enum VisionService {
 
     // MARK: - barcode
 
-    static func barcode(_ req: VisionRequest) throws -> ServiceResult {
+    static func barcode(_ req: VisionRequest) async throws -> ServiceResult {
         let input = try InputSource.resolve(path: req.path, data: req.data)
         do {
             let r: BarcodeScanResult
             switch input {
             case .path(let p):
-                r = try BarcodeEngine.detect(
+                r = try await BarcodeEngine.detect(
                     path: p, symbologies: req.symbologies ?? [],
                     minConfidence: req.minConfidence ?? 0.0,
                     page: req.page ?? 1, scale: req.scale ?? 2.0)
             case .data(let d):
-                r = try BarcodeEngine.detect(
+                r = try await BarcodeEngine.detect(
                     data: d, symbologies: req.symbologies ?? [],
                     minConfidence: req.minConfidence ?? 0.0,
                     page: req.page ?? 1, scale: req.scale ?? 2.0)
@@ -158,10 +158,10 @@ enum VisionService {
     /// `barcode(_:)` wholesale so there's exactly one scan code path (Micro QR is a distinct
     /// Vision symbology and is intentionally excluded — use `barcode --symbology microQR`
     /// for that).
-    static func qr(_ req: VisionRequest) throws -> ServiceResult {
+    static func qr(_ req: VisionRequest) async throws -> ServiceResult {
         var forced = req
         forced.symbologies = ["qr"]
-        return try barcode(forced)
+        return try await barcode(forced)
     }
 
     // MARK: - make-qr
@@ -204,17 +204,17 @@ enum VisionService {
     /// `barcode`'s detection-only shape, applied to documents: `found: false` (not an error,
     /// exit 0) when no document quad clears `minConfidence` — see `Geometry.pickLargestQuad`
     /// for why an exact-zero-confidence Vision candidate never counts as found.
-    static func documentBounds(_ req: VisionRequest) throws -> ServiceResult {
+    static func documentBounds(_ req: VisionRequest) async throws -> ServiceResult {
         let input = try InputSource.resolve(path: req.path, data: req.data)
         do {
             let r: DocumentBoundsResult
             switch input {
             case .path(let p):
-                r = try DocumentEngine.detectBounds(
+                r = try await DocumentEngine.detectBounds(
                     path: p, minConfidence: req.minConfidence ?? DocumentEngine.defaultMinConfidence,
                     page: req.page ?? 1, scale: req.scale ?? 2.0)
             case .data(let d):
-                r = try DocumentEngine.detectBounds(
+                r = try await DocumentEngine.detectBounds(
                     data: d, minConfidence: req.minConfidence ?? DocumentEngine.defaultMinConfidence,
                     page: req.page ?? 1, scale: req.scale ?? 2.0)
             }
@@ -246,17 +246,17 @@ enum VisionService {
     /// (`detectQuad`) and throws `bad_request/no_document_detected` itself when nothing is
     /// found (a production command with nothing to produce is an error, matching `make-qr`'s
     /// "reject empty text" precedent — plan §2.5). `--out` / base64 branching mirrors `make-qr`.
-    static func rectifyDocument(_ req: VisionRequest) throws -> ServiceResult {
+    static func rectifyDocument(_ req: VisionRequest) async throws -> ServiceResult {
         let input = try InputSource.resolve(path: req.path, data: req.data)
         do {
             let r: RectifyResult
             switch input {
             case .path(let p):
-                r = try DocumentEngine.rectify(
+                r = try await DocumentEngine.rectify(
                     path: p, minConfidence: req.minConfidence ?? DocumentEngine.defaultMinConfidence,
                     page: req.page ?? 1, scale: req.scale ?? 2.0)
             case .data(let d):
-                r = try DocumentEngine.rectify(
+                r = try await DocumentEngine.rectify(
                     data: d, minConfidence: req.minConfidence ?? DocumentEngine.defaultMinConfidence,
                     page: req.page ?? 1, scale: req.scale ?? 2.0)
             }
@@ -372,12 +372,12 @@ enum VisionService {
         func status(_ ok: Bool) -> YAMLValue { .string(ok ? "available" : "unavailable") }
         let text = status(await OCREngine.textVisionAvailable())
         let face = status(await OCREngine.faceVisionAvailable())
-        let barcodeStatus = status(BarcodeEngine.barcodeVisionAvailable())
+        let barcodeStatus = status(await BarcodeEngine.barcodeVisionAvailable())
         // Represents both document-bounds and rectify-document (rectify's other half,
         // CIPerspectiveCorrection, is a plain CoreImage filter with no availability gate —
         // plan §2.3 — so this single Vision probe is representative of both, same precedent
         // as `qr` not getting its own doctor entry alongside `barcode`).
-        let documentStatus = status(DocumentEngine.documentVisionAvailable())
+        let documentStatus = status(await DocumentEngine.documentVisionAvailable())
         let documentOCRStatus = status(await DocumentOCREngine.documentOCRAvailable())
         let classifyStatus = status(await ClassifyEngine.classifyVisionAvailable())
         let askStatus: YAMLValue

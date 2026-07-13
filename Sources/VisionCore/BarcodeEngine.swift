@@ -95,15 +95,23 @@ public enum BarcodeEngine {
         }
     }
 
+    /// Every `.perform()` call this engine makes (`detect`'s real work, plus the probe below)
+    /// funnels through this one dedicated queue — see `VisionSerialQueue`'s type doc for why
+    /// (plan `2026-07-13-macvis-vision-concurrency-fix`). Unlike OCR/Face, this engine's
+    /// deadlock did not reproduce even at 200 concurrent calls in Phase 0 testing — the fix
+    /// is still applied preventively, since community documentation frames this as a general
+    /// property of `VNImageRequestHandler.perform()`, not conditional on reproducing it for
+    /// this specific request type on this machine.
+    private static let visionQueue = VisionSerialQueue(label: "mac-local-vision.barcode")
+
     /// Real capability probe for `doctor` (see `OCREngine.textVisionAvailable` for the
     /// pattern this mirrors): does `VNDetectBarcodesRequest` actually execute here? Runs
     /// over a small blank image; memoized for the process lifetime.
-    public static func barcodeVisionAvailable() -> Bool {
-        _probe.withLock { cached in
-            if let v = cached { return v }
-            let ok = probe()
-            cached = ok; return ok
-        }
+    public static func barcodeVisionAvailable() async -> Bool {
+        if let cached = _probe.withLock({ $0 }) { return cached }
+        let ok = (try? await visionQueue.run(probe)) ?? false
+        _probe.withLock { $0 = ok }
+        return ok
     }
 
     private static let _probe = OSAllocatedUnfairLock(initialState: Optional<Bool>.none)
@@ -129,10 +137,10 @@ public enum BarcodeEngine {
         minConfidence: Double = 0.0,
         page: Int = 1,
         scale: Double = 2.0
-    ) throws -> BarcodeScanResult {
+    ) async throws -> BarcodeScanResult {
         let syms = try resolveSymbologies(symbologies)
         let (cgImage, width, height) = try OCREngine.loadImage(path: path, page: page, scale: scale)
-        return try detectCore(cgImage: cgImage, width: width, height: height,
+        return try await detectCore(cgImage: cgImage, width: width, height: height,
                               symbologies: syms, minConfidence: minConfidence)
     }
 
@@ -142,42 +150,44 @@ public enum BarcodeEngine {
         minConfidence: Double = 0.0,
         page: Int = 1,
         scale: Double = 2.0
-    ) throws -> BarcodeScanResult {
+    ) async throws -> BarcodeScanResult {
         let syms = try resolveSymbologies(symbologies)
         let (cgImage, width, height) = try OCREngine.loadImage(data: data, page: page, scale: scale)
-        return try detectCore(cgImage: cgImage, width: width, height: height,
+        return try await detectCore(cgImage: cgImage, width: width, height: height,
                               symbologies: syms, minConfidence: minConfidence)
     }
 
     private static func detectCore(
         cgImage: CGImage, width: Int, height: Int,
         symbologies: [VNBarcodeSymbology], minConfidence: Double
-    ) throws -> BarcodeScanResult {
-        let request = VNDetectBarcodesRequest()
-        if !symbologies.isEmpty {
-            request.symbologies = symbologies
-        } // else: leave Vision's default — scan every known symbology.
+    ) async throws -> BarcodeScanResult {
+        try await visionQueue.run {
+            let request = VNDetectBarcodesRequest()
+            if !symbologies.isEmpty {
+                request.symbologies = symbologies
+            } // else: leave Vision's default — scan every known symbology.
 
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        try handler.perform([request])
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            try handler.perform([request])
 
-        var codes: [BarcodeResult] = []
-        for observation in request.results ?? [] {
-            let confidence = Double(observation.confidence)
-            guard confidence >= minConfidence else { continue }
+            var codes: [BarcodeResult] = []
+            for observation in request.results ?? [] {
+                let confidence = Double(observation.confidence)
+                guard confidence >= minConfidence else { continue }
 
-            let bb = observation.boundingBox // normalized, bottom-left origin
-            let rect = NormalizedRect(x: bb.origin.x, y: bb.origin.y,
-                                      width: bb.size.width, height: bb.size.height)
-            guard Geometry.isSane(rect) else { continue }
-            let pixel = Geometry.toPixelRect(rect, imageWidth: width, imageHeight: height)
+                let bb = observation.boundingBox // normalized, bottom-left origin
+                let rect = NormalizedRect(x: bb.origin.x, y: bb.origin.y,
+                                          width: bb.size.width, height: bb.size.height)
+                guard Geometry.isSane(rect) else { continue }
+                let pixel = Geometry.toPixelRect(rect, imageWidth: width, imageHeight: height)
 
-            codes.append(BarcodeResult(
-                payload: observation.payloadStringValue,
-                symbologyName: name(for: observation.symbology),
-                rect: pixel, confidence: confidence))
+                codes.append(BarcodeResult(
+                    payload: observation.payloadStringValue,
+                    symbologyName: name(for: observation.symbology),
+                    rect: pixel, confidence: confidence))
+            }
+            return BarcodeScanResult(codes: codes, imageWidth: width, imageHeight: height)
         }
-        return BarcodeScanResult(codes: codes, imageWidth: width, imageHeight: height)
     }
 }
 #endif

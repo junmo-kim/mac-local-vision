@@ -62,11 +62,11 @@ struct BarcodeFixtureTests {
     }
 
     @Test("detect reads a rendered QR payload back and reports physical dimensions")
-    func detectsQR() throws {
+    func detectsQR() async throws {
         let payload = "https://example.com/ticket/abc123"
         let path = Self.renderQRFixture(payload)
         defer { try? FileManager.default.removeItem(atPath: path) }
-        let result = try BarcodeEngine.detect(path: path)
+        let result = try await BarcodeEngine.detect(path: path)
         #expect(result.codes.count == 1)
         let code = try #require(result.codes.first)
         #expect(code.payload == payload)
@@ -76,11 +76,11 @@ struct BarcodeFixtureTests {
     }
 
     @Test("detect reads a rendered Code128 payload back")
-    func detectsCode128() throws {
+    func detectsCode128() async throws {
         let payload = "ABC12345"
         let path = Self.renderCode128Fixture(payload)
         defer { try? FileManager.default.removeItem(atPath: path) }
-        let result = try BarcodeEngine.detect(path: path)
+        let result = try await BarcodeEngine.detect(path: path)
         #expect(result.codes.count == 1)
         let code = try #require(result.codes.first)
         #expect(code.payload == payload)
@@ -88,32 +88,32 @@ struct BarcodeFixtureTests {
     }
 
     @Test("code_count is 0 (not an error) when no barcode is present")
-    func noBarcodeIsEmptyNotError() throws {
+    func noBarcodeIsEmptyNotError() async throws {
         let path = Self.renderBlankFixture()
         defer { try? FileManager.default.removeItem(atPath: path) }
-        let result = try BarcodeEngine.detect(path: path)
+        let result = try await BarcodeEngine.detect(path: path)
         #expect(result.codes.isEmpty)
         #expect(result.imageWidth == 200 && result.imageHeight == 200)
     }
 
     @Test("--symbology filter narrows detection to the requested symbologies")
-    func symbologyFilterNarrowsResults() throws {
+    func symbologyFilterNarrowsResults() async throws {
         let path = Self.renderCode128Fixture("FILTERED1")
         defer { try? FileManager.default.removeItem(atPath: path) }
         // Restricting to qr must not find the code128 barcode present in the image.
-        let filtered = try BarcodeEngine.detect(path: path, symbologies: ["qr"])
+        let filtered = try await BarcodeEngine.detect(path: path, symbologies: ["qr"])
         #expect(filtered.codes.isEmpty)
         // Restricting to code128 (the actual symbology) still finds it.
-        let matched = try BarcodeEngine.detect(path: path, symbologies: ["code128"])
+        let matched = try await BarcodeEngine.detect(path: path, symbologies: ["code128"])
         #expect(matched.codes.count == 1)
     }
 
     @Test("an unknown --symbology name throws bad_request/unknown_symbology")
-    func unknownSymbologyThrows() throws {
+    func unknownSymbologyThrows() async throws {
         let path = Self.renderQRFixture("irrelevant")
         defer { try? FileManager.default.removeItem(atPath: path) }
         do {
-            _ = try BarcodeEngine.detect(path: path, symbologies: ["not-a-real-symbology"])
+            _ = try await BarcodeEngine.detect(path: path, symbologies: ["not-a-real-symbology"])
             Issue.record("expected throw")
         } catch {
             let se = error as? ServiceError
@@ -129,53 +129,53 @@ struct BarcodeFixtureTests {
     // contract; the dispatch wiring itself is verified via release-binary E2E).
 
     @Test("symbologies: [\"qr\"] finds a QR code — the qr command's happy path")
-    func qrOnlyFilterFindsQR() throws {
+    func qrOnlyFilterFindsQR() async throws {
         let payload = "qr-command-contract-check"
         let path = Self.renderQRFixture(payload)
         defer { try? FileManager.default.removeItem(atPath: path) }
-        let result = try BarcodeEngine.detect(path: path, symbologies: ["qr"])
+        let result = try await BarcodeEngine.detect(path: path, symbologies: ["qr"])
         #expect(result.codes.count == 1)
         #expect(result.codes.first?.payload == payload)
         #expect(result.codes.first?.symbologyName == "qr")
     }
 
     @Test("symbologies: [\"qr\"] reports code_count: 0 on a non-QR barcode — the qr command must not fall back to barcode's full scan")
-    func qrOnlyFilterExcludesOtherSymbologies() throws {
+    func qrOnlyFilterExcludesOtherSymbologies() async throws {
         let path = Self.renderCode128Fixture("qr-command-should-not-see-this")
         defer { try? FileManager.default.removeItem(atPath: path) }
-        let result = try BarcodeEngine.detect(path: path, symbologies: ["qr"])
+        let result = try await BarcodeEngine.detect(path: path, symbologies: ["qr"])
         #expect(result.codes.isEmpty)
         // Meanwhile the unrestricted scan (what `barcode` does) still finds it — proves the
         // qr/barcode divergence is the filter, not a broken fixture.
-        let unrestricted = try BarcodeEngine.detect(path: path)
+        let unrestricted = try await BarcodeEngine.detect(path: path)
         #expect(unrestricted.codes.count == 1)
     }
 
     // MARK: - data (base64) path — same logic, in-memory instead of disk
 
     @Test("detect(data:) reads the same QR payload as detect(path:)")
-    func detectsFromData() throws {
+    func detectsFromData() async throws {
         let payload = "DataPathQR"
         let path = Self.renderQRFixture(payload)
         defer { try? FileManager.default.removeItem(atPath: path) }
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        let result = try BarcodeEngine.detect(data: data)
+        let result = try await BarcodeEngine.detect(data: data)
         #expect(result.codes.count == 1)
         #expect(result.codes.first?.payload == payload)
     }
 
     @Test("loading a missing file throws imageLoadFailed")
-    func missingFileThrows() {
-        #expect(throws: VisionError.self) {
-            _ = try BarcodeEngine.detect(path: "/no/such/file.png")
+    func missingFileThrows() async {
+        await #expect(throws: VisionError.self) {
+            _ = try await BarcodeEngine.detect(path: "/no/such/file.png")
         }
     }
 
     @Test("garbage bytes → imageLoadFailed (not valid raster or PDF)")
-    func garbageDataThrows() {
+    func garbageDataThrows() async {
         let garbage = Data(repeating: 0xAB, count: 64)
-        #expect(throws: VisionError.self) {
-            _ = try BarcodeEngine.detect(data: garbage)
+        await #expect(throws: VisionError.self) {
+            _ = try await BarcodeEngine.detect(data: garbage)
         }
     }
 }

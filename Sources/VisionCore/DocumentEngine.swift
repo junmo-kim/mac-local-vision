@@ -61,16 +61,23 @@ public enum DocumentEngine {
     /// own risk); this only changes what happens when they don't.
     public static let defaultMinConfidence: Double = 0.7
 
+    /// Every `.perform()` call this engine makes (`detectQuad`'s real work — shared by
+    /// `detectBounds` and `rectify` — plus the probe below) funnels through this one
+    /// dedicated queue — see `VisionSerialQueue`'s type doc for why (plan
+    /// `2026-07-13-macvis-vision-concurrency-fix`). Like `BarcodeEngine`, this engine's
+    /// deadlock did not reproduce even at 200 concurrent calls in Phase 0 testing; the fix
+    /// is still applied preventively (see `BarcodeEngine.visionQueue`'s doc comment for why).
+    private static let visionQueue = VisionSerialQueue(label: "mac-local-vision.document")
+
     /// Real capability probe for `doctor` (mirrors `OCREngine.textVisionAvailable`/
     /// `BarcodeEngine.barcodeVisionAvailable`). `CIPerspectiveCorrection` (the other half of
     /// `rectify`) is a plain CoreImage filter with no availability gate (plan §2.3), so this
     /// single probe represents both `document-bounds` and `rectify-document`.
-    public static func documentVisionAvailable() -> Bool {
-        _probe.withLock { cached in
-            if let v = cached { return v }
-            let ok = probe()
-            cached = ok; return ok
-        }
+    public static func documentVisionAvailable() async -> Bool {
+        if let cached = _probe.withLock({ $0 }) { return cached }
+        let ok = (try? await visionQueue.run(probe)) ?? false
+        _probe.withLock { $0 = ok }
+        return ok
     }
 
     private static let _probe = OSAllocatedUnfairLock(initialState: Optional<Bool>.none)
@@ -92,17 +99,17 @@ public enum DocumentEngine {
 
     public static func detectBounds(
         path: String, minConfidence: Double = defaultMinConfidence, page: Int = 1, scale: Double = 2.0
-    ) throws -> DocumentBoundsResult {
+    ) async throws -> DocumentBoundsResult {
         let (cgImage, width, height) = try OCREngine.loadImage(path: path, page: page, scale: scale)
-        let quad = try detectQuad(cgImage: cgImage, minConfidence: minConfidence)
+        let quad = try await detectQuad(cgImage: cgImage, minConfidence: minConfidence)
         return boundsResult(quad: quad, width: width, height: height)
     }
 
     public static func detectBounds(
         data: Data, minConfidence: Double = defaultMinConfidence, page: Int = 1, scale: Double = 2.0
-    ) throws -> DocumentBoundsResult {
+    ) async throws -> DocumentBoundsResult {
         let (cgImage, width, height) = try OCREngine.loadImage(data: data, page: page, scale: scale)
-        let quad = try detectQuad(cgImage: cgImage, minConfidence: minConfidence)
+        let quad = try await detectQuad(cgImage: cgImage, minConfidence: minConfidence)
         return boundsResult(quad: quad, width: width, height: height)
     }
 
@@ -124,20 +131,20 @@ public enum DocumentEngine {
 
     public static func rectify(
         path: String, minConfidence: Double = defaultMinConfidence, page: Int = 1, scale: Double = 2.0
-    ) throws -> RectifyResult {
+    ) async throws -> RectifyResult {
         let (cgImage, width, height) = try OCREngine.loadImage(path: path, page: page, scale: scale)
-        return try rectifyCore(cgImage: cgImage, width: width, height: height, minConfidence: minConfidence)
+        return try await rectifyCore(cgImage: cgImage, width: width, height: height, minConfidence: minConfidence)
     }
 
     public static func rectify(
         data: Data, minConfidence: Double = defaultMinConfidence, page: Int = 1, scale: Double = 2.0
-    ) throws -> RectifyResult {
+    ) async throws -> RectifyResult {
         let (cgImage, width, height) = try OCREngine.loadImage(data: data, page: page, scale: scale)
-        return try rectifyCore(cgImage: cgImage, width: width, height: height, minConfidence: minConfidence)
+        return try await rectifyCore(cgImage: cgImage, width: width, height: height, minConfidence: minConfidence)
     }
 
-    private static func rectifyCore(cgImage: CGImage, width: Int, height: Int, minConfidence: Double) throws -> RectifyResult {
-        guard let quad = try detectQuad(cgImage: cgImage, minConfidence: minConfidence) else {
+    private static func rectifyCore(cgImage: CGImage, width: Int, height: Int, minConfidence: Double) async throws -> RectifyResult {
+        guard let quad = try await detectQuad(cgImage: cgImage, minConfidence: minConfidence) else {
             // Unlike detectBounds (a detection-only command where "nothing found" is a valid
             // barcode-style outcome), rectify *produces* an image — nothing to produce means
             // this is a bad_request, matching make-qr's "reject empty text" precedent (plan §2.5).
@@ -213,20 +220,22 @@ public enum DocumentEngine {
     /// then delegates ranking to `Geometry.pickLargestQuad` (Vision-independent, unit-tested
     /// in `PureLogicTests`), which resolves the "multiple documents in one frame" policy
     /// question (plan risk #3: prefer the largest by area).
-    private static func detectQuad(cgImage: CGImage, minConfidence: Double) throws -> NormalizedQuad? {
-        let request = VNDetectDocumentSegmentationRequest()
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        try handler.perform([request])
+    private static func detectQuad(cgImage: CGImage, minConfidence: Double) async throws -> NormalizedQuad? {
+        try await visionQueue.run {
+            let request = VNDetectDocumentSegmentationRequest()
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            try handler.perform([request])
 
-        let candidates = (request.results ?? []).map { obs in
-            NormalizedQuad(
-                topLeft: NormalizedPoint(x: Double(obs.topLeft.x), y: Double(obs.topLeft.y)),
-                topRight: NormalizedPoint(x: Double(obs.topRight.x), y: Double(obs.topRight.y)),
-                bottomRight: NormalizedPoint(x: Double(obs.bottomRight.x), y: Double(obs.bottomRight.y)),
-                bottomLeft: NormalizedPoint(x: Double(obs.bottomLeft.x), y: Double(obs.bottomLeft.y)),
-                confidence: Double(obs.confidence))
+            let candidates = (request.results ?? []).map { obs in
+                NormalizedQuad(
+                    topLeft: NormalizedPoint(x: Double(obs.topLeft.x), y: Double(obs.topLeft.y)),
+                    topRight: NormalizedPoint(x: Double(obs.topRight.x), y: Double(obs.topRight.y)),
+                    bottomRight: NormalizedPoint(x: Double(obs.bottomRight.x), y: Double(obs.bottomRight.y)),
+                    bottomLeft: NormalizedPoint(x: Double(obs.bottomLeft.x), y: Double(obs.bottomLeft.y)),
+                    confidence: Double(obs.confidence))
+            }
+            return Geometry.pickLargestQuad(candidates, minConfidence: minConfidence)
         }
-        return Geometry.pickLargestQuad(candidates, minConfidence: minConfidence)
     }
 }
 #endif

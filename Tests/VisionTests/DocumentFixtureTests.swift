@@ -148,11 +148,11 @@ struct DocumentFixtureTests {
     // MARK: - detectBounds
 
     @Test("detectBounds finds a perspective-warped document within tolerance of the composited quad")
-    func detectsPerspectiveQuad() throws {
+    func detectsPerspectiveQuad() async throws {
         let fixture = Self.makePerspectiveFixture(text: "RECEIPT")
         defer { try? FileManager.default.removeItem(atPath: fixture.path) }
 
-        let result = try DocumentEngine.detectBounds(path: fixture.path)
+        let result = try await DocumentEngine.detectBounds(path: fixture.path)
         #expect(result.imageWidth == fixture.canvasSize)
         #expect(result.imageHeight == fixture.canvasSize)
         let corners = try #require(result.corners)
@@ -175,37 +175,37 @@ struct DocumentFixtureTests {
     }
 
     @Test("found: false (not an error) when no document is present — barcode-style semantics")
-    func noDocumentIsNotAnError() throws {
+    func noDocumentIsNotAnError() async throws {
         let image = Self.renderBlankFixture(size: 600)
         let path = Self.writePNG(image)
         defer { try? FileManager.default.removeItem(atPath: path) }
 
-        let result = try DocumentEngine.detectBounds(path: path)
+        let result = try await DocumentEngine.detectBounds(path: path)
         #expect(result.corners == nil)
         #expect(result.confidence == nil)
         #expect(result.imageWidth == 600 && result.imageHeight == 600)
     }
 
     @Test("found: false (not a false positive) on a bright/overexposed blank background — hostile-review fix: the exact-zero sentinel alone doesn't cover this regime")
-    func brightBlankBackgroundIsNotFalsePositive() throws {
+    func brightBlankBackgroundIsNotFalsePositive() async throws {
         let image = Self.renderBrightBlankFixture()
         let path = Self.writePNG(image)
         defer { try? FileManager.default.removeItem(atPath: path) }
 
-        let result = try DocumentEngine.detectBounds(path: path)
+        let result = try await DocumentEngine.detectBounds(path: path)
         #expect(result.corners == nil)
         #expect(result.confidence == nil)
         #expect(result.imageWidth == 600 && result.imageHeight == 600)
     }
 
     @Test("detectBounds(data:) matches detectBounds(path:) for the same image")
-    func detectsFromData() throws {
+    func detectsFromData() async throws {
         let fixture = Self.makePerspectiveFixture(text: "DATA PATH")
         defer { try? FileManager.default.removeItem(atPath: fixture.path) }
         let data = try Data(contentsOf: URL(fileURLWithPath: fixture.path))
 
-        let fromPath = try DocumentEngine.detectBounds(path: fixture.path)
-        let fromData = try DocumentEngine.detectBounds(data: data)
+        let fromPath = try await DocumentEngine.detectBounds(path: fixture.path)
+        let fromData = try await DocumentEngine.detectBounds(data: data)
         #expect(fromPath.corners != nil)
         #expect(fromData.corners != nil)
         #expect(fromPath.corners?.topLeft.x == fromData.corners?.topLeft.x)
@@ -213,30 +213,30 @@ struct DocumentFixtureTests {
     }
 
     @Test("loading a missing file throws imageLoadFailed")
-    func missingFileThrows() {
-        #expect(throws: VisionError.self) {
-            _ = try DocumentEngine.detectBounds(path: "/no/such/file.png")
+    func missingFileThrows() async {
+        await #expect(throws: VisionError.self) {
+            _ = try await DocumentEngine.detectBounds(path: "/no/such/file.png")
         }
     }
 
     @Test("garbage bytes → imageLoadFailed (not valid raster or PDF)")
-    func garbageDataThrows() {
+    func garbageDataThrows() async {
         let garbage = Data(repeating: 0xAB, count: 64)
-        #expect(throws: VisionError.self) {
-            _ = try DocumentEngine.detectBounds(data: garbage)
+        await #expect(throws: VisionError.self) {
+            _ = try await DocumentEngine.detectBounds(data: garbage)
         }
     }
 
     // MARK: - rectify
 
     @Test("rectify throws bad_request/no_document_detected when no document is present")
-    func rectifyThrowsWhenNoDocument() throws {
+    func rectifyThrowsWhenNoDocument() async throws {
         let image = Self.renderBlankFixture(size: 600)
         let path = Self.writePNG(image)
         defer { try? FileManager.default.removeItem(atPath: path) }
 
         do {
-            _ = try DocumentEngine.rectify(path: path)
+            _ = try await DocumentEngine.rectify(path: path)
             Issue.record("expected throw")
         } catch {
             let se = error as? ServiceError
@@ -246,13 +246,13 @@ struct DocumentFixtureTests {
     }
 
     @Test("rectify throws bad_request/no_document_detected on a bright/overexposed blank background")
-    func rectifyThrowsOnBrightBlankBackground() throws {
+    func rectifyThrowsOnBrightBlankBackground() async throws {
         let image = Self.renderBrightBlankFixture()
         let path = Self.writePNG(image)
         defer { try? FileManager.default.removeItem(atPath: path) }
 
         do {
-            _ = try DocumentEngine.rectify(path: path)
+            _ = try await DocumentEngine.rectify(path: path)
             Issue.record("expected throw")
         } catch {
             let se = error as? ServiceError
@@ -262,12 +262,12 @@ struct DocumentFixtureTests {
     }
 
     @Test("rectify(data:) succeeds on the same fixture as rectify(path:)")
-    func rectifiesFromData() throws {
+    func rectifiesFromData() async throws {
         let fixture = Self.makePerspectiveFixture(text: "DATA RECTIFY")
         defer { try? FileManager.default.removeItem(atPath: fixture.path) }
         let data = try Data(contentsOf: URL(fileURLWithPath: fixture.path))
 
-        let result = try DocumentEngine.rectify(data: data)
+        let result = try await DocumentEngine.rectify(data: data)
         #expect(result.width > 0 && result.height > 0)
         #expect(!result.png.isEmpty)
     }
@@ -290,7 +290,7 @@ struct DocumentFixtureTests {
         // confirmed during review. A stronger warp that defeats raw OCR would make the
         // "rectify was necessary" property directly observable, but isn't required for this
         // test to catch geometry regressions.
-        let rectified = try DocumentEngine.rectify(path: fixture.path)
+        let rectified = try await DocumentEngine.rectify(path: fixture.path)
         #expect(rectified.width > 0 && rectified.height > 0)
 
         let outPath = NSTemporaryDirectory() + "macvis-document-rectified-\(UUID().uuidString).png"

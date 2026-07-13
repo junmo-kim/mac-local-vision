@@ -80,6 +80,25 @@ struct ConcurrencyTests {
         return writePNG(ctx.makeImage()!, tag: tag)
     }
 
+    static func renderQRFixture(_ payload: String, moduleScale: CGFloat = 24) -> String {
+        let result = try! QRGenerator.generate(text: payload, correctionLevel: "M", size: Int(moduleScale))
+        let path = NSTemporaryDirectory() + "macvis-concurrency-barcode-\(UUID().uuidString).png"
+        try! result.png.write(to: URL(fileURLWithPath: path))
+        return path
+    }
+
+    static func renderDocumentFixture(width: Int = 1600, height: Int = 2000) -> CGImage {
+        let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                            bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(red: 0.3, green: 0.3, blue: 0.3, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        let margin = 100
+        ctx.fill(CGRect(x: margin, y: margin, width: width - 2 * margin, height: height - 2 * margin))
+        return ctx.makeImage()!
+    }
+
     /// Runs `concurrency` `Task`s of `body`, racing a `timeoutSeconds` wall-clock deadline —
     /// see the suite doc for why this guard is best-effort, not a total-deadlock guarantee.
     static func assertNoDeadlock(
@@ -132,6 +151,25 @@ struct ConcurrencyTests {
         defer { try? FileManager.default.removeItem(atPath: path) }
         await Self.assertNoDeadlock(concurrency: 15, timeoutSeconds: 20) {
             _ = try await FaceEngine.detectFacePrints(path: path)
+        }
+    }
+
+    @Test("Barcode: 25 concurrent detect() calls all complete (preventive — did not reproduce a deadlock even at n=200 in Phase 0)")
+    func barcodeConcurrencyDoesNotDeadlock() async throws {
+        let path = Self.renderQRFixture("concurrency-check-payload")
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        await Self.assertNoDeadlock(concurrency: 25, timeoutSeconds: 20) {
+            _ = try await BarcodeEngine.detect(path: path)
+        }
+    }
+
+    @Test("Document: 25 concurrent detectBounds() calls all complete (preventive — did not reproduce a deadlock even at n=200 in Phase 0)")
+    func documentConcurrencyDoesNotDeadlock() async throws {
+        let img = Self.renderDocumentFixture()
+        let path = Self.writePNG(img, tag: "document")
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        await Self.assertNoDeadlock(concurrency: 25, timeoutSeconds: 20) {
+            _ = try await DocumentEngine.detectBounds(path: path)
         }
     }
 }

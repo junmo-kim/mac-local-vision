@@ -20,13 +20,13 @@ struct QRGeneratorFixtureTests {
     }
 
     @Test("a generated QR round-trips through BarcodeEngine.detect with the same payload")
-    func roundTrips() throws {
+    func roundTrips() async throws {
         let payload = "https://example.com/ticket/xyz789"
         let result = try QRGenerator.generate(text: payload)
         let path = try Self.writeTempPNG(result.png)
         defer { try? FileManager.default.removeItem(atPath: path) }
 
-        let scan = try BarcodeEngine.detect(path: path)
+        let scan = try await BarcodeEngine.detect(path: path)
         #expect(scan.codes.count == 1)
         let code = try #require(scan.codes.first)
         #expect(code.payload == payload)
@@ -35,21 +35,21 @@ struct QRGeneratorFixtureTests {
     }
 
     @Test("round-trips at every correction level")
-    func roundTripsAllCorrectionLevels() throws {
+    func roundTripsAllCorrectionLevels() async throws {
         for level in ["L", "M", "Q", "H"] {
             let payload = "correction-level-\(level)"
             let result = try QRGenerator.generate(text: payload, correctionLevel: level)
             let path = try Self.writeTempPNG(result.png)
             defer { try? FileManager.default.removeItem(atPath: path) }
 
-            let scan = try BarcodeEngine.detect(path: path)
+            let scan = try await BarcodeEngine.detect(path: path)
             let code = try #require(scan.codes.first, "correction level \(level) failed to round-trip")
             #expect(code.payload == payload)
         }
     }
 
     @Test("round-trips at the minimum viable module scale (size: 1)")
-    func roundTripsAtMinimumSize() throws {
+    func roundTripsAtMinimumSize() async throws {
         // Establishes the floor referenced by QRGenerator.defaultModuleScale's doc comment:
         // even an unmagnified (1px/module) render must still be scannable, so the default
         // is chosen for robustness margin, not because smaller sizes are unreadable.
@@ -58,7 +58,7 @@ struct QRGeneratorFixtureTests {
         let path = try Self.writeTempPNG(result.png)
         defer { try? FileManager.default.removeItem(atPath: path) }
 
-        let scan = try BarcodeEngine.detect(path: path)
+        let scan = try await BarcodeEngine.detect(path: path)
         let code = try #require(scan.codes.first)
         #expect(code.payload == payload)
     }
