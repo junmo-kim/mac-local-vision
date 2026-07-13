@@ -69,6 +69,19 @@ public enum OCREngine {
         return Languages.resolve(preferred: Locale.preferredLanguages, supported: supported)
     }
 
+    /// Every `.perform()` call this engine makes (`recognize`/`find`'s real work, plus the
+    /// two probes below) funnels through this one dedicated queue — see
+    /// `VisionSerialQueue`'s type doc for why concurrent `VNImageRequestHandler.perform()`
+    /// calls need this (plan `2026-07-13-macvis-vision-concurrency-fix`; Phase 0 of that plan
+    /// reproduced this engine deadlocking directly: 15 concurrent `Task`s each calling the
+    /// then-synchronous `recognize`, hung indefinitely at ~0% CPU). `faceVisionAvailable()`
+    /// also routes through here (rather than through `FaceEngine`'s own queue) purely because
+    /// it's physically defined in this file — see its doc comment for why it lives here at
+    /// all; correctness doesn't depend on *which* dedicated queue a given probe uses, only
+    /// that some dedicated queue is used (per-engine grouping is a throughput choice, not a
+    /// safety one).
+    private static let visionQueue = VisionSerialQueue(label: "mac-local-vision.ocr")
+
     /// Real capability probes for `doctor`: can these Vision requests actually execute
     /// here? Each runs over a small blank image — succeeds normally, throws if the
     /// platform/sandbox denies that request. Beats a hardcoded "available". Probe per
@@ -76,36 +89,36 @@ public enum OCREngine {
     /// memoized for the process lifetime (capability doesn't change mid-process; matters
     /// for the long-lived MCP server calling `doctor` repeatedly). Vision rejects ≤2px
     /// images, so use 32×32.
-    public static func textVisionAvailable() -> Bool {
-        _textProbe.withLock { cached in
-            if let v = cached { return v }
-            let ok = probe { VNRecognizeTextRequest() }
-            cached = ok; return ok
-        }
+    public static func textVisionAvailable() async -> Bool {
+        if let cached = _textProbe.withLock({ $0 }) { return cached }
+        let ok = await probe { VNRecognizeTextRequest() }
+        _textProbe.withLock { $0 = ok }
+        return ok
     }
 
-    public static func faceVisionAvailable() -> Bool {
-        _faceProbe.withLock { cached in
-            if let v = cached { return v }
-            let ok = probe { VNDetectFaceRectanglesRequest() }
-            cached = ok; return ok
-        }
+    public static func faceVisionAvailable() async -> Bool {
+        if let cached = _faceProbe.withLock({ $0 }) { return cached }
+        let ok = await probe { VNDetectFaceRectanglesRequest() }
+        _faceProbe.withLock { $0 = ok }
+        return ok
     }
 
     private static let _textProbe = OSAllocatedUnfairLock(initialState: Optional<Bool>.none)
     private static let _faceProbe = OSAllocatedUnfairLock(initialState: Optional<Bool>.none)
 
-    private static func probe(_ makeRequest: () -> VNRequest) -> Bool {
-        guard let ctx = CGContext(data: nil, width: 32, height: 32, bitsPerComponent: 8,
-                                  bytesPerRow: 0, space: CGColorSpaceCreateDeviceGray(),
-                                  bitmapInfo: CGImageAlphaInfo.none.rawValue),
-              let img = ctx.makeImage() else { return false }
-        do {
-            try VNImageRequestHandler(cgImage: img, options: [:]).perform([makeRequest()])
-            return true
-        } catch {
-            return false
-        }
+    private static func probe(_ makeRequest: @escaping @Sendable () -> VNRequest) async -> Bool {
+        (try? await visionQueue.run {
+            guard let ctx = CGContext(data: nil, width: 32, height: 32, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpaceCreateDeviceGray(),
+                                      bitmapInfo: CGImageAlphaInfo.none.rawValue),
+                  let img = ctx.makeImage() else { return false }
+            do {
+                try VNImageRequestHandler(cgImage: img, options: [:]).perform([makeRequest()])
+                return true
+            } catch {
+                return false
+            }
+        }) ?? false
     }
 
     // MARK: - Image loading (path)
@@ -262,9 +275,9 @@ public enum OCREngine {
         includeWords: Bool = false,
         page: Int = 1,
         scale: Double = 2.0
-    ) throws -> OCRResult {
+    ) async throws -> OCRResult {
         let (cgImage, width, height) = try loadImage(path: path, page: page, scale: scale)
-        return try recognizeCore(cgImage: cgImage, width: width, height: height,
+        return try await recognizeCore(cgImage: cgImage, width: width, height: height,
                                   fast: fast, minConfidence: minConfidence,
                                   languages: languages, includeWords: includeWords)
     }
@@ -277,9 +290,9 @@ public enum OCREngine {
         includeWords: Bool = false,
         page: Int = 1,
         scale: Double = 2.0
-    ) throws -> OCRResult {
+    ) async throws -> OCRResult {
         let (cgImage, width, height) = try loadImage(data: data, page: page, scale: scale)
-        return try recognizeCore(cgImage: cgImage, width: width, height: height,
+        return try await recognizeCore(cgImage: cgImage, width: width, height: height,
                                   fast: fast, minConfidence: minConfidence,
                                   languages: languages, includeWords: includeWords)
     }
@@ -287,42 +300,44 @@ public enum OCREngine {
     private static func recognizeCore(
         cgImage: CGImage, width: Int, height: Int,
         fast: Bool, minConfidence: Double, languages: [String], includeWords: Bool
-    ) throws -> OCRResult {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = fast ? .fast : .accurate
-        request.usesLanguageCorrection = !fast
-        request.recognitionLanguages = languages.isEmpty ? Self.systemDefaultLanguages() : languages
+    ) async throws -> OCRResult {
+        try await visionQueue.run {
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = fast ? .fast : .accurate
+            request.usesLanguageCorrection = !fast
+            request.recognitionLanguages = languages.isEmpty ? Self.systemDefaultLanguages() : languages
 
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        try handler.perform([request])
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            try handler.perform([request])
 
-        var lines: [OCRLine] = []
-        for observation in request.results ?? [] {
-            guard let candidate = observation.topCandidates(1).first else { continue }
-            let confidence = Double(candidate.confidence)
-            guard confidence >= minConfidence else { continue }
+            var lines: [OCRLine] = []
+            for observation in request.results ?? [] {
+                guard let candidate = observation.topCandidates(1).first else { continue }
+                let confidence = Double(candidate.confidence)
+                guard confidence >= minConfidence else { continue }
 
-            let bb = observation.boundingBox // normalized, bottom-left origin
-            let rect = NormalizedRect(x: bb.origin.x, y: bb.origin.y,
-                                      width: bb.size.width, height: bb.size.height)
-            guard Geometry.isSane(rect) else { continue }
+                let bb = observation.boundingBox // normalized, bottom-left origin
+                let rect = NormalizedRect(x: bb.origin.x, y: bb.origin.y,
+                                          width: bb.size.width, height: bb.size.height)
+                guard Geometry.isSane(rect) else { continue }
 
-            var words: [OCRWord] = []
-            if includeWords {
-                for range in TextRanges.words(in: candidate.string) {
-                    guard let box = try? candidate.boundingBox(for: range) else { continue }
-                    let wbb = box.boundingBox
-                    let wrect = NormalizedRect(x: wbb.origin.x, y: wbb.origin.y,
-                                               width: wbb.size.width, height: wbb.size.height)
-                    guard Geometry.isSane(wrect) else { continue }
-                    words.append(OCRWord(text: String(candidate.string[range]), rect: wrect))
+                var words: [OCRWord] = []
+                if includeWords {
+                    for range in TextRanges.words(in: candidate.string) {
+                        guard let box = try? candidate.boundingBox(for: range) else { continue }
+                        let wbb = box.boundingBox
+                        let wrect = NormalizedRect(x: wbb.origin.x, y: wbb.origin.y,
+                                                   width: wbb.size.width, height: wbb.size.height)
+                        guard Geometry.isSane(wrect) else { continue }
+                        words.append(OCRWord(text: String(candidate.string[range]), rect: wrect))
+                    }
                 }
+                lines.append(OCRLine(text: candidate.string, rect: rect, confidence: confidence, words: words))
             }
-            lines.append(OCRLine(text: candidate.string, rect: rect, confidence: confidence, words: words))
-        }
 
-        let fullText = lines.map(\.text).joined(separator: "\n")
-        return OCRResult(lines: lines, fullText: fullText, imageWidth: width, imageHeight: height)
+            let fullText = lines.map(\.text).joined(separator: "\n")
+            return OCRResult(lines: lines, fullText: fullText, imageWidth: width, imageHeight: height)
+        }
     }
 
     // MARK: - find (path + data)
@@ -336,9 +351,9 @@ public enum OCREngine {
         languages: [String] = [],
         page: Int = 1,
         scale: Double = 2.0
-    ) throws -> FindResult? {
+    ) async throws -> FindResult? {
         let (cgImage, width, height) = try loadImage(path: path, page: page, scale: scale)
-        return try findCore(cgImage: cgImage, width: width, height: height,
+        return try await findCore(cgImage: cgImage, width: width, height: height,
                             target: target, minConfidence: minConfidence, languages: languages)
     }
 
@@ -349,49 +364,51 @@ public enum OCREngine {
         languages: [String] = [],
         page: Int = 1,
         scale: Double = 2.0
-    ) throws -> FindResult? {
+    ) async throws -> FindResult? {
         let (cgImage, width, height) = try loadImage(data: data, page: page, scale: scale)
-        return try findCore(cgImage: cgImage, width: width, height: height,
+        return try await findCore(cgImage: cgImage, width: width, height: height,
                             target: target, minConfidence: minConfidence, languages: languages)
     }
 
     private static func findCore(
         cgImage: CGImage, width: Int, height: Int,
         target: String, minConfidence: Double, languages: [String]
-    ) throws -> FindResult? {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate // headless font defense (architecture §5.2)
-        request.usesLanguageCorrection = true
-        request.recognitionLanguages = languages.isEmpty ? Self.systemDefaultLanguages() : languages
+    ) async throws -> FindResult? {
+        try await visionQueue.run {
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate // headless font defense (architecture §5.2)
+            request.usesLanguageCorrection = true
+            request.recognitionLanguages = languages.isEmpty ? Self.systemDefaultLanguages() : languages
 
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        try handler.perform([request])
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            try handler.perform([request])
 
-        for observation in request.results ?? [] {
-            guard let candidate = observation.topCandidates(1).first else { continue }
-            let confidence = Double(candidate.confidence)
-            guard confidence >= minConfidence else { continue }
-            guard let range = candidate.string.range(of: target) else { continue }
+            for observation in request.results ?? [] {
+                guard let candidate = observation.topCandidates(1).first else { continue }
+                let confidence = Double(candidate.confidence)
+                guard confidence >= minConfidence else { continue }
+                guard let range = candidate.string.range(of: target) else { continue }
 
-            // Prefer the tight sub-string box (architecture §5.4). But `boundingBox(for:)`
-            // throws for some ranges (ligatures / whitespace spans); the text IS present,
-            // so fall back to the line-level box rather than reporting a false not-found.
-            func normalized(_ cg: CGRect) -> NormalizedRect {
-                NormalizedRect(x: cg.origin.x, y: cg.origin.y, width: cg.size.width, height: cg.size.height)
+                // Prefer the tight sub-string box (architecture §5.4). But `boundingBox(for:)`
+                // throws for some ranges (ligatures / whitespace spans); the text IS present,
+                // so fall back to the line-level box rather than reporting a false not-found.
+                func normalized(_ cg: CGRect) -> NormalizedRect {
+                    NormalizedRect(x: cg.origin.x, y: cg.origin.y, width: cg.size.width, height: cg.size.height)
+                }
+                var rect = normalized(observation.boundingBox)
+                var approximate = true
+                if let box = try? candidate.boundingBox(for: range) {
+                    let sub = normalized(box.boundingBox)
+                    if Geometry.isSane(sub) { rect = sub; approximate = false }
+                }
+                guard Geometry.isSane(rect) else { continue }
+
+                let pixel = Geometry.toPixelRect(rect, imageWidth: width, imageHeight: height)
+                return FindResult(rect: pixel, confidence: confidence,
+                                  textFound: String(candidate.string[range]), approximate: approximate)
             }
-            var rect = normalized(observation.boundingBox)
-            var approximate = true
-            if let box = try? candidate.boundingBox(for: range) {
-                let sub = normalized(box.boundingBox)
-                if Geometry.isSane(sub) { rect = sub; approximate = false }
-            }
-            guard Geometry.isSane(rect) else { continue }
-
-            let pixel = Geometry.toPixelRect(rect, imageWidth: width, imageHeight: height)
-            return FindResult(rect: pixel, confidence: confidence,
-                              textFound: String(candidate.string[range]), approximate: approximate)
+            return nil
         }
-        return nil
     }
 }
 #endif

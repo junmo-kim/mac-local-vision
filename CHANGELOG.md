@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+Fixes a deadlock in `ocr`/`find`/`sort-faces`/`find-person` (and preventively
+`barcode`/`qr`/`document-bounds`/`rectify-document`) when handled concurrently — e.g. via
+`macvis serve` fielding overlapping MCP requests. `VNImageRequestHandler.perform()` blocks
+its calling thread while dispatching internally; concurrent `Task`s calling it directly can
+exhaust Swift concurrency's small, fixed-size cooperative thread pool and hang the process
+(reproduced directly: 15 concurrent OCR/face-detection calls hung indefinitely, killed
+externally after several minutes at ~0% CPU). Every Vision-bound engine now routes its
+`.perform()` calls through a dedicated serial queue that suspends the caller rather than
+blocking it, the same fix `classify` already carried.
+
 Adds `macvis classify` — tags an image or PDF against Vision's 1,303-label taxonomy
 (`VNClassifyImageRequestRevision2`), exposed on the CLI and as an MCP tool. Unlike
 `barcode`/`ocr`, Vision scores all 1,303 labels for every image rather than returning only

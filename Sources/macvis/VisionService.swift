@@ -7,8 +7,8 @@ import SemanticEngine
 enum VisionService {
     static func handle(_ req: VisionRequest) async throws -> ServiceResult {
         switch req.op {
-        case "ocr":    return try ocr(req)
-        case "find":   return try find(req)
+        case "ocr":    return try await ocr(req)
+        case "find":   return try await find(req)
         case "doctor": return ServiceResult(await doctor())
         case "ask":    return try await ask(req)
         case "ping":   return ServiceResult(.dict([("ok", .bool(true))]))
@@ -30,7 +30,7 @@ enum VisionService {
 
     // MARK: - ocr
 
-    static func ocr(_ req: VisionRequest) throws -> ServiceResult {
+    static func ocr(_ req: VisionRequest) async throws -> ServiceResult {
         let input = try InputSource.resolve(path: req.path, data: req.data)
         let withWords = req.words ?? false
         let withBoxes = (req.boxes ?? false) || withWords  // --words implies line boxes
@@ -38,12 +38,12 @@ enum VisionService {
             let r: OCRResult
             switch input {
             case .path(let p):
-                r = try OCREngine.recognize(
+                r = try await OCREngine.recognize(
                     path: p, fast: req.fast ?? false, minConfidence: req.minConfidence ?? 0.0,
                     languages: req.languages ?? [], includeWords: withWords,
                     page: req.page ?? 1, scale: req.scale ?? 2.0)
             case .data(let d):
-                r = try OCREngine.recognize(
+                r = try await OCREngine.recognize(
                     data: d, fast: req.fast ?? false, minConfidence: req.minConfidence ?? 0.0,
                     languages: req.languages ?? [], includeWords: withWords,
                     page: req.page ?? 1, scale: req.scale ?? 2.0)
@@ -73,7 +73,7 @@ enum VisionService {
 
     // MARK: - find
 
-    static func find(_ req: VisionRequest) throws -> ServiceResult {
+    static func find(_ req: VisionRequest) async throws -> ServiceResult {
         let input = try InputSource.resolve(path: req.path, data: req.data)
         guard let target = req.target, !target.isEmpty else {
             throw ServiceError(name: "bad_request", reason: "missing_target",
@@ -83,11 +83,11 @@ enum VisionService {
             let hit: FindResult?
             switch input {
             case .path(let p):
-                hit = try OCREngine.find(
+                hit = try await OCREngine.find(
                     path: p, target: target, minConfidence: req.minConfidence ?? 0.3,
                     languages: req.languages ?? [], page: req.page ?? 1, scale: req.scale ?? 2.0)
             case .data(let d):
-                hit = try OCREngine.find(
+                hit = try await OCREngine.find(
                     data: d, target: target, minConfidence: req.minConfidence ?? 0.3,
                     languages: req.languages ?? [], page: req.page ?? 1, scale: req.scale ?? 2.0)
             }
@@ -370,8 +370,8 @@ enum VisionService {
         // Real probes, not hardcoded constants — and per request family, since text and
         // face recognition have independent availability.
         func status(_ ok: Bool) -> YAMLValue { .string(ok ? "available" : "unavailable") }
-        let text = status(OCREngine.textVisionAvailable())
-        let face = status(OCREngine.faceVisionAvailable())
+        let text = status(await OCREngine.textVisionAvailable())
+        let face = status(await OCREngine.faceVisionAvailable())
         let barcodeStatus = status(BarcodeEngine.barcodeVisionAvailable())
         // Represents both document-bounds and rectify-document (rectify's other half,
         // CIPerspectiveCorrection, is a plain CoreImage filter with no availability gate —

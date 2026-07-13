@@ -40,20 +40,20 @@ struct OCRFixtureTests {
     }
 
     @Test("recognize reads the rendered text and reports physical dimensions")
-    func recognizesText() throws {
+    func recognizesText() async throws {
         let path = Self.renderFixture("Submit")
         defer { try? FileManager.default.removeItem(atPath: path) }
-        let result = try OCREngine.recognize(path: path, languages: ["en-US"])
+        let result = try await OCREngine.recognize(path: path, languages: ["en-US"])
         #expect(result.fullText.contains("Submit"))
         #expect(result.imageWidth == 480 && result.imageHeight == 140)
         #expect(result.lines.count >= 1)
     }
 
     @Test("find returns an in-bounds center and the matched substring")
-    func findsWord() throws {
+    func findsWord() async throws {
         let path = Self.renderFixture("Submit")
         defer { try? FileManager.default.removeItem(atPath: path) }
-        let hit = try #require(try OCREngine.find(path: path, target: "Submit", languages: ["en-US"]))
+        let hit = try #require(try await OCREngine.find(path: path, target: "Submit", languages: ["en-US"]))
         #expect(hit.textFound.contains("Submit"))
         #expect(hit.rect.centerX > 0 && hit.rect.centerX < 480)
         #expect(hit.rect.centerY > 0 && hit.rect.centerY < 140)
@@ -61,46 +61,47 @@ struct OCRFixtureTests {
     }
 
     @Test("find returns nil for an absent word")
-    func findsNothing() throws {
+    func findsNothing() async throws {
         let path = Self.renderFixture("Submit")
         defer { try? FileManager.default.removeItem(atPath: path) }
-        #expect(try OCREngine.find(path: path, target: "Cancel", languages: ["en-US"]) == nil)
+        let hit = try await OCREngine.find(path: path, target: "Cancel", languages: ["en-US"])
+        #expect(hit == nil)
     }
 
     @Test("loading a missing file throws imageLoadFailed")
-    func missingFileThrows() {
-        #expect(throws: VisionError.self) {
-            _ = try OCREngine.recognize(path: "/no/such/file.png")
+    func missingFileThrows() async {
+        await #expect(throws: VisionError.self) {
+            _ = try await OCREngine.recognize(path: "/no/such/file.png")
         }
     }
 
     // MARK: - data (base64) path — same logic, in-memory instead of disk
 
     @Test("recognize(data:) reads the same text as recognize(path:)")
-    func recognizesFromData() throws {
+    func recognizesFromData() async throws {
         let path = Self.renderFixture("DataPath")
         defer { try? FileManager.default.removeItem(atPath: path) }
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        let result = try OCREngine.recognize(data: data, languages: ["en-US"])
+        let result = try await OCREngine.recognize(data: data, languages: ["en-US"])
         #expect(result.fullText.contains("DataPath"))
         #expect(result.imageWidth == 480 && result.imageHeight == 140)
     }
 
     @Test("find(data:) locates the target in an in-memory image")
-    func findsFromData() throws {
+    func findsFromData() async throws {
         let path = Self.renderFixture("ClickMe")
         defer { try? FileManager.default.removeItem(atPath: path) }
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        let hit = try #require(try OCREngine.find(data: data, target: "ClickMe", languages: ["en-US"]))
+        let hit = try #require(try await OCREngine.find(data: data, target: "ClickMe", languages: ["en-US"]))
         #expect(hit.textFound.contains("ClickMe"))
         #expect(hit.rect.centerX > 0 && hit.rect.centerX < 480)
     }
 
     @Test("garbage bytes → imageLoadFailed (not valid raster or PDF)")
-    func garbageDataThrows() {
+    func garbageDataThrows() async {
         let garbage = Data(repeating: 0xAB, count: 64)
-        #expect(throws: VisionError.self) {
-            _ = try OCREngine.recognize(data: garbage, languages: ["en-US"])
+        await #expect(throws: VisionError.self) {
+            _ = try await OCREngine.recognize(data: garbage, languages: ["en-US"])
         }
     }
 }

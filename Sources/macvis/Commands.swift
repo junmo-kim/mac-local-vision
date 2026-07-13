@@ -242,7 +242,7 @@ enum DoctorCommand {
 // MARK: - faces
 
 enum FacesCommand {
-    static func run(_ sub: String, _ args: [String]) throws -> Int32 {
+    static func run(_ sub: String, _ args: [String]) async throws -> Int32 {
         if CLIHelp.wantsHelp(args) { return helpExit(sub) }
         let parsed = ArgParser.parse(args)
         let format = try resolveFormat(parsed)
@@ -253,14 +253,14 @@ enum FacesCommand {
             let result: YAMLValue
             switch sub {
             case "sort-faces":
-                result = try FaceEngine.sortFaces(inputDir: parsed.firstPositional ?? ".",
+                result = try await FaceEngine.sortFaces(inputDir: parsed.firstPositional ?? ".",
                                                   outputDir: parsed.option("output-dir"),
                                                   threshold: threshold)
             case "find-person":
                 guard let target = parsed.option("target") else {
                     throw CLIError(message: "find-person requires --target <image>")
                 }
-                result = try FaceEngine.findPerson(targetImage: target,
+                result = try await FaceEngine.findPerson(targetImage: target,
                                                    inDir: parsed.option("dir") ?? ".",
                                                    threshold: threshold)
             default:

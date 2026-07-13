@@ -6,9 +6,18 @@ import CoreGraphics
 import ImageIO
 
 /// One detected face: its source file, index within that image, pixel box, and the
-/// feature-print used for similarity. (Not Sendable — `VNFeaturePrintObservation`
-/// isn't; used synchronously in-process.)
-public struct FaceInstance {
+/// feature-print used for similarity.
+///
+/// `@unchecked Sendable`: `VNFeaturePrintObservation` itself isn't `Sendable` (a mutable
+/// Vision class type), so this can't get automatic conformance. It's safe here by
+/// construction rather than by the type system: every `FaceInstance` is built entirely
+/// inside `detectFacePrints`' `VisionSerialQueue.run` closure (one dedicated background
+/// thread), then handed across a single `await` suspension to the calling `Task` — at
+/// that point full ownership transfers and nothing else touches it concurrently.
+/// `sortFaces`/`findPerson` (this type's only two call sites) both consume `FaceInstance`s
+/// from a single sequential `for` loop, never from concurrent `Task`s racing the same
+/// instance.
+public struct FaceInstance: @unchecked Sendable {
     public let file: String
     public let faceIndex: Int
     public let rect: PixelRect
@@ -27,37 +36,51 @@ public struct FaceInstance {
 public enum FaceEngine {
     static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "heic", "heif", "tiff", "tif", "gif", "bmp", "webp"]
 
+    /// Every `.perform()` call this engine makes — both the face-rectangle detection and the
+    /// per-face feature-print generation inside `detectFacePrints`' loop below — funnels
+    /// through this one dedicated queue (see `VisionSerialQueue`'s type doc for why). Both
+    /// calls for one image are wrapped in a *single* `run` closure rather than one `run` per
+    /// `.perform()` call: they're already sequential within one image (the feature print
+    /// needs the face rectangles first), so there's no correctness difference, and it avoids
+    /// N+1 queue hops per image. Tradeoff: a photo with many faces holds this queue for the
+    /// full detect-then-print-every-face duration, so a concurrent single-face request queues
+    /// behind it — a throughput/fairness cost, not a correctness one.
+    private static let visionQueue = VisionSerialQueue(label: "mac-local-vision.face")
+
     /// Detect faces in one image and return a feature print per face.
-    public static func detectFacePrints(path: String) throws -> [FaceInstance] {
+    public static func detectFacePrints(path: String) async throws -> [FaceInstance] {
         // Shared oriented loader — applies EXIF orientation so sideways phone photos
-        // don't feed rotated faces into the feature print.
+        // don't feed rotated faces into the feature print. Pure CoreGraphics decode, no
+        // Vision request — doesn't need the queue.
         guard let img = OCREngine.loadOriented(path: path) else {
             throw VisionError.imageLoadFailed(path)
         }
-        let det = VNDetectFaceRectanglesRequest()
-        try VNImageRequestHandler(cgImage: img, options: [:]).perform([det])
+        return try await visionQueue.run {
+            let det = VNDetectFaceRectanglesRequest()
+            try VNImageRequestHandler(cgImage: img, options: [:]).perform([det])
 
-        let W = img.width, H = img.height
-        var out: [FaceInstance] = []
-        for (i, face) in (det.results ?? []).enumerated() {
-            let bb = face.boundingBox // normalized, bottom-left
-            // Expand 20% so the crop carries a bit of context (helps the descriptor).
-            let mx = bb.size.width * 0.2, my = bb.size.height * 0.2
-            let nx = max(0, bb.origin.x - mx)
-            let nyBottom = max(0, bb.origin.y - my)
-            let nw = min(1 - nx, bb.size.width + 2 * mx)
-            let nh = min(1 - nyBottom, bb.size.height + 2 * my)
-            let x = Int(nx * Double(W)), w = Int(nw * Double(W))
-            let yTop = Int((1 - nyBottom - nh) * Double(H)), h = Int(nh * Double(H))
-            guard w > 8, h > 8, let crop = img.cropping(to: CGRect(x: x, y: yTop, width: w, height: h)) else { continue }
+            let W = img.width, H = img.height
+            var out: [FaceInstance] = []
+            for (i, face) in (det.results ?? []).enumerated() {
+                let bb = face.boundingBox // normalized, bottom-left
+                // Expand 20% so the crop carries a bit of context (helps the descriptor).
+                let mx = bb.size.width * 0.2, my = bb.size.height * 0.2
+                let nx = max(0, bb.origin.x - mx)
+                let nyBottom = max(0, bb.origin.y - my)
+                let nw = min(1 - nx, bb.size.width + 2 * mx)
+                let nh = min(1 - nyBottom, bb.size.height + 2 * my)
+                let x = Int(nx * Double(W)), w = Int(nw * Double(W))
+                let yTop = Int((1 - nyBottom - nh) * Double(H)), h = Int(nh * Double(H))
+                guard w > 8, h > 8, let crop = img.cropping(to: CGRect(x: x, y: yTop, width: w, height: h)) else { continue }
 
-            let fp = VNGenerateImageFeaturePrintRequest()
-            try VNImageRequestHandler(cgImage: crop, options: [:]).perform([fp])
-            guard let obs = fp.results?.first else { continue }
-            out.append(FaceInstance(file: path, faceIndex: i,
-                                    rect: PixelRect(x: x, y: yTop, width: w, height: h), print: obs))
+                let fp = VNGenerateImageFeaturePrintRequest()
+                try VNImageRequestHandler(cgImage: crop, options: [:]).perform([fp])
+                guard let obs = fp.results?.first else { continue }
+                out.append(FaceInstance(file: path, faceIndex: i,
+                                        rect: PixelRect(x: x, y: yTop, width: w, height: h), print: obs))
+            }
+            return out
         }
-        return out
     }
 
     static func distance(_ a: VNFeaturePrintObservation, _ b: VNFeaturePrintObservation) -> Float {
@@ -81,11 +104,11 @@ public enum FaceEngine {
 
     /// Cluster all faces in `inputDir` by person. If `outputDir` is given, write
     /// `person_N/` folders of symlinks to the source images.
-    public static func sortFaces(inputDir: String, outputDir: String?, threshold: Float) throws -> YAMLValue {
+    public static func sortFaces(inputDir: String, outputDir: String?, threshold: Float) async throws -> YAMLValue {
         let files = try listImages(inputDir)
         var instances: [FaceInstance] = []
         for f in files {
-            if let fps = try? detectFacePrints(path: f) { instances.append(contentsOf: fps) }
+            if let fps = try? await detectFacePrints(path: f) { instances.append(contentsOf: fps) }
         }
 
         // Greedy clustering: assign to the nearest representative under threshold, else new.
@@ -121,14 +144,14 @@ public enum FaceEngine {
     }
 
     /// Find images in `inDir` whose faces match the first face in `targetImage`.
-    public static func findPerson(targetImage: String, inDir: String, threshold: Float) throws -> YAMLValue {
-        guard let target = try detectFacePrints(path: targetImage).first else {
+    public static func findPerson(targetImage: String, inDir: String, threshold: Float) async throws -> YAMLValue {
+        guard let target = try await detectFacePrints(path: targetImage).first else {
             throw VisionError.noFace(targetImage)
         }
         let files = try listImages(inDir)
         var matches: [(file: String, distance: Float)] = []
         for f in files {
-            let fps = (try? detectFacePrints(path: f)) ?? []
+            let fps = (try? await detectFacePrints(path: f)) ?? []
             var best = Float.greatestFiniteMagnitude
             for fp in fps { best = min(best, distance(target.print, fp.print)) }
             if best < threshold { matches.append((f, best)) }

@@ -65,7 +65,7 @@ func dispatch(_ args: [String]) async -> Int32 {
         case "rectify-document":       return try await RectifyDocumentCommand.run(rest)
         case "document-ocr":           return try await DocumentOCRCommand.run(rest)
         case "ask":                    return try await AskCommand.run(rest)
-        case "sort-faces", "find-person": return try FacesCommand.run(sub, rest)
+        case "sort-faces", "find-person": return try await FacesCommand.run(sub, rest)
         case "doctor":                 return await DoctorCommand.run(rest)
         case "mcp":                    return await MCPCommand.run(rest)
         case "serve":                  return await ServeCommand.run(rest)

@@ -275,7 +275,7 @@ struct DocumentFixtureTests {
     // MARK: - core E2E: rectify's output is actually OCR-readable (round-trip, plan §2.4)
 
     @Test("rectify corrects a perspective-warped document and OCREngine reads the original text back")
-    func rectifyRoundTripsThroughOCR() throws {
+    func rectifyRoundTripsThroughOCR() async throws {
         let expectedText = "INVOICE 4471"
         let fixture = Self.makePerspectiveFixture(text: expectedText)
         defer { try? FileManager.default.removeItem(atPath: fixture.path) }
@@ -297,7 +297,7 @@ struct DocumentFixtureTests {
         try rectified.png.write(to: URL(fileURLWithPath: outPath))
         defer { try? FileManager.default.removeItem(atPath: outPath) }
 
-        let ocr = try OCREngine.recognize(path: outPath, languages: ["en-US"])
+        let ocr = try await OCREngine.recognize(path: outPath, languages: ["en-US"])
         #expect(ocr.fullText.contains("INVOICE"), "rectified OCR text was: \(ocr.fullText)")
         #expect(ocr.fullText.contains("4471"), "rectified OCR text was: \(ocr.fullText)")
     }
