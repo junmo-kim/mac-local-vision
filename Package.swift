@@ -5,6 +5,14 @@ import PackageDescription
 // Deployment target is macOS 26 (Vision modes). The `ask` (multimodal) path is
 // guarded behind @available(macOS 27, *) + runtime availability checks, so the
 // same binary runs on 26 (Vision-only) and 27 (full `ask`).
+
+// Optimize release builds for size. Every macvis invocation is a fresh, short-lived process
+// whose latency is dominated by the Vision/FoundationModels frameworks and process launch,
+// not by macvis's own thin Swift glue — so -Osize measured the same command latency as -O
+// (doctor/ocr/find within noise) while shrinking the stripped binary ~15%. `.unsafeFlags` is
+// fine here: macvis is a standalone executable, never a versioned SwiftPM dependency.
+let releaseSizeOpt: [SwiftSetting] = [.unsafeFlags(["-Osize"], .when(configuration: .release))]
+
 let package = Package(
     name: "mac-local-vision",
     platforms: [.macOS("26.0")],
@@ -14,14 +22,15 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "macvis",
-            dependencies: ["VisionCore", "SemanticEngine"]
+            dependencies: ["VisionCore", "SemanticEngine"],
+            swiftSettings: releaseSizeOpt
         ),
         // Vision-bound code (ocr/find/faces) + the pure logic it shares.
-        .target(name: "VisionCore"),
+        .target(name: "VisionCore", swiftSettings: releaseSizeOpt),
         // `ask` abstraction: protocol + Mock (CI) + AFM (macOS 27, guarded).
         // Depends on VisionCore to reuse the shared image loader (page/scale/PDF/EXIF),
         // so `ask` honors the same input contract as ocr/find.
-        .target(name: "SemanticEngine", dependencies: ["VisionCore"]),
+        .target(name: "SemanticEngine", dependencies: ["VisionCore"], swiftSettings: releaseSizeOpt),
         // Pure logic only — runs on any macOS runner (and conceptually Linux).
         .testTarget(name: "PureLogicTests", dependencies: ["VisionCore"]),
         // `ask` plumbing (MockEngine / AskOutcome / SemanticError / mapCallError) without a model.
