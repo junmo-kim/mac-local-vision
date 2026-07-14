@@ -26,18 +26,27 @@ DEV="${DEVELOPER_DIR:-/Applications/Xcode-27.0.0-Beta.3.app/Contents/Developer}"
 [ -d "$DEV" ] || { echo "✗ Xcode 27 SDK not found at: $DEV  (set DEVELOPER_DIR)"; exit 1; }
 command -v gh >/dev/null || { echo "✗ gh CLI not found / not on PATH"; exit 1; }
 
-# FoundationModels ABI-skew warning (beta-only safety net; warn, don't block). FoundationModels
+# FoundationModels ABI-skew check (beta-only safety net; warn, don't block). FoundationModels
 # is still beta, so Apple doesn't guarantee ABI stability across beta builds: if the FM this
-# binary is *built* against differs from the FM in the *runtime* it runs on, a live model call
-# can SIGSEGV (observed: built 2.0.51, ran on 2.0.59). We can't know which future combos are
-# safe, so warn instead of failing. Once FoundationModels ships a stable ABI (GA), this goes away.
+# binary is *built* against differs from the FM in the macOS 27 *runtime* it runs on, a live
+# model call can SIGSEGV (observed: built against 2.0.51, ran on 2.0.59). Once FoundationModels
+# ships a stable ABI (GA), this goes away.
 SDK_TBD="$DEV/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/FoundationModels.framework/FoundationModels.tbd"
 SDK_FM=$(grep -m1 'current-version:' "$SDK_TBD" 2>/dev/null | awk '{print $2}')
-RT_FM=$(plutil -extract CFBundleVersion raw /System/Library/Frameworks/FoundationModels.framework/Resources/Info.plist 2>/dev/null || true)
-if [ -n "$SDK_FM" ] && [ -n "$RT_FM" ] && [ "$SDK_FM" != "$RT_FM" ]; then
-  echo "⚠️  FoundationModels ABI mismatch: build SDK FM=$SDK_FM vs runtime FM=$RT_FM"
-  echo "   Beta ABI is unstable; this build may SIGSEGV at runtime. Verify 'ask' on-device,"
-  echo "   or build with the Xcode 27 beta whose FoundationModels matches this runtime."
+if [ "$(sw_vers -productVersion | cut -d. -f1)" = 27 ]; then
+  # Building on a macOS 27 host: its runtime FM is the one this build will actually run against,
+  # so an SDK-vs-runtime mismatch is a real, checkable risk right here.
+  RT_FM=$(plutil -extract CFBundleVersion raw /System/Library/Frameworks/FoundationModels.framework/Resources/Info.plist 2>/dev/null || true)
+  if [ -n "$SDK_FM" ] && [ -n "$RT_FM" ] && [ "$SDK_FM" != "$RT_FM" ]; then
+    echo "⚠️  FoundationModels ABI mismatch: build SDK FM=$SDK_FM vs runtime FM=$RT_FM"
+    echo "   Beta ABI is unstable; this build may SIGSEGV at runtime. Build with the Xcode 27"
+    echo "   beta whose FoundationModels matches this runtime, or verify 'ask' on-device."
+  fi
+else
+  # Building on macOS < 27 for a macOS 27 runtime: that runtime's FM isn't visible here, so the
+  # SDK-vs-runtime comparison would only ever compare against the wrong (local) FM. Just flag it.
+  echo "ℹ️  building the ask binary (SDK FoundationModels ${SDK_FM:-?}) on $(sw_vers -productVersion) for a"
+  echo "   macOS 27 runtime — can't verify the FM ABI match from here; check 'ask' on the target device."
 fi
 
 # Privacy guard — mirrors the CI check. HTTPServer.swift is the sole intentional user
