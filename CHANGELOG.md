@@ -2,22 +2,19 @@
 
 ## v0.3.0
 
-`macvis` grows from OCR/find into a full on-device vision toolkit — still one Pure-Swift binary, zero deps, every command on the CLI **and** as an MCP tool.
+`macvis` grows from OCR/find into a full on-device vision toolkit — one Pure-Swift binary, zero dependencies, every command on the CLI **and** as an MCP tool.
 
-**New commands:**
-- **`barcode`** — scan QR + every 1D/2D symbology Vision supports; `--symbology` to narrow. No code found → `code_count: 0`, exit 0.
-- **`qr`** — `barcode` narrowed to QR only (server-enforced).
-- **`make-qr <text>`** — generate a scannable QR PNG via CoreImage (no Vision); round-trip verified.
-- **`classify`** — tag an image/PDF against Vision's 1,303-label taxonomy (`--min-confidence`/`--top` applied by the engine).
-- **`document-ocr`** — structured document OCR: title / paragraphs / tables / lists with layout, alongside plain-text `ocr`.
-- **`document-bounds`** / **`rectify-document`** — detect a document's four corners and flatten it into a straight top-down scan.
-- **`ask --schema <path|json>`** *(Beta, macOS 27)* — force a structured JSON answer via Foundation Models guided generation. JSON Schema MVP subset (object / string(+enum) / integer / number / boolean / array / required); unsupported keywords are rejected (`bad_request`), never silently ignored. Schema mapping is pure logic — a malformed schema is rejected before any model call, and the existing `probeAskAvailability()` crash-gate is unchanged. On the CLI and the MCP `ask` tool's `schema` argument.
+**New commands**
+- **`barcode`** / **`qr`** — scan QR and every 1D/2D symbology Vision supports.
+- **`make-qr`** — generate a scannable QR PNG (CoreImage, no Vision needed).
+- **`classify`** — tag an image or PDF against Vision's 1,303-label taxonomy.
+- **`document-ocr`** — structured document OCR (title, paragraphs, tables, lists), alongside plain-text `ocr`.
+- **`document-bounds`** / **`rectify-document`** — find a document's corners and flatten it into a straight top-down scan.
+- **`ask --schema`** *(Beta, macOS 27)* — force a structured-JSON answer from Apple Foundation Models via a JSON Schema, instead of free text.
 
-**Fixed:** a concurrency deadlock in `ocr` / `find` / `sort-faces` / `find-person` (and preventively `barcode` / `qr` / `document-bounds` / `rectify-document`) under concurrent load — e.g. `macvis serve` fielding overlapping MCP requests. `VNImageRequestHandler.perform()` blocks its thread internally, so concurrent tasks could exhaust Swift's cooperative pool and hang; Vision engines now route through a serial queue that suspends the caller instead.
+**Fixed** — a concurrency deadlock that could hang `ocr` / `find` / `sort-faces` and the other Vision commands under concurrent load (e.g. `macvis serve` fielding overlapping requests).
 
-**Build:** release binaries are now `-Osize` (~15% smaller, no measurable latency change). The `ask` binary must be built with the Xcode 27 beta whose FoundationModels SDK matches the target macOS 27 runtime — FoundationModels is still beta, so a mismatch can crash at runtime; `scripts/release-ask.sh` warns on a detected mismatch. See [CONTRIBUTING → Releasing](CONTRIBUTING.md#releasing).
-
-`ask` needs macOS 27 (Beta) + Apple Intelligence; everything else runs on macOS 26+.
+Release binaries are now built `-Osize`. `ask` needs macOS 27 (Beta) + Apple Intelligence; everything else runs on macOS 26+ — see [CONTRIBUTING](CONTRIBUTING.md#releasing) for building the `ask` binary.
 
 ## v0.2.1
 
