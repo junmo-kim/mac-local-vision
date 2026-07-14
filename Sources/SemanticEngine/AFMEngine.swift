@@ -73,6 +73,17 @@ public struct AFMEngine: SemanticEngine {
         // (`SystemLanguageModel.default`), which needs no entitlement; nothing leaves the box.
         let session = LanguageModelSession()  // on-device SystemLanguageModel.default
         do {
+            // Build the `Prompt` value exactly once, then pass it (as a plain value, not a
+            // @PromptBuilder trailing closure) into whichever `respond`/`streamResponse`
+            // overload the schema/stream combination selects below. Real-hardware testing
+            // (macOS 27 Beta 26A5378j, 2026-07-14) found that repeating the inline
+            // `{ prompt; Attachment(image) }` builder closure across all four schema×stream
+            // branches reliably SIGSEGVs (100% reproducible, crash always inside the
+            // trailing-closure call — see the ask --schema plan's risk log). Building the
+            // `Prompt` once and passing it by value to the `to prompt:` overloads (which the
+            // SDK's swiftinterface exposes for every schema/stream combination) removes the
+            // repeated-closure pattern entirely; this is the leading fix candidate.
+            let promptValue = Prompt { prompt; Attachment(image) }
             let text: String
             // `schema` (built by JSONSchemaMapper, entirely upstream and independent of this
             // call) selects Guided Generation. Either way this only picks which `respond`/
@@ -81,23 +92,23 @@ public struct AFMEngine: SemanticEngine {
             if let schema {
                 if stream {
                     var latestJSON = ""
-                    let responseStream = session.streamResponse(schema: schema) { prompt; Attachment(image) }
+                    let responseStream = session.streamResponse(to: promptValue, schema: schema)
                     for try await chunk in responseStream {
                         latestJSON = chunk.content.jsonString  // snapshot-accumulating stream
                     }
                     text = latestJSON
                 } else {
-                    text = try await session.respond(schema: schema) { prompt; Attachment(image) }.content.jsonString
+                    text = try await session.respond(to: promptValue, schema: schema).content.jsonString
                 }
             } else if stream {
                 var latest = ""
-                let responseStream = session.streamResponse { prompt; Attachment(image) }
+                let responseStream = session.streamResponse(to: promptValue)
                 for try await chunk in responseStream {
                     latest = chunk.content  // snapshot-accumulating stream
                 }
                 text = latest
             } else {
-                text = try await session.respond { prompt; Attachment(image) }.content
+                text = try await session.respond(to: promptValue).content
             }
             return AskOutcome(text: text, compute: .onDevice)
         } catch let e as SemanticError {
