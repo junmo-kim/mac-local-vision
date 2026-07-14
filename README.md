@@ -20,7 +20,7 @@ No Node, no Python, no runtime dependencies: the OS *is* the dependency.
 
 ## Tiny & fast
 
-A **~240 KB stripped single binary** (the frameworks are the OS, nothing is bundled — no
+A **~550 KB stripped single binary** (the frameworks are the OS, nothing is bundled — no
 Node, no Python, no `node_modules`), and every call is a fresh **~0.3 s end-to-end** —
 process launch *plus* recognition, no daemon to keep warm:
 
@@ -50,8 +50,9 @@ time, not process launch:
 ## Requirements
 
 Apple Silicon Mac, macOS 26+. No other dependencies — `Vision` and `FoundationModels`
-ship with the OS. Building the `ask` (multimodal) path additionally needs the macOS 27 SDK
-(Xcode 27); everything else builds and runs on macOS 26.
+ship with the OS. Building the `ask` (multimodal) path additionally needs an Xcode 27 beta
+whose FoundationModels SDK matches your macOS 27 runtime (see [Build & test](#build--test));
+everything else builds and runs on macOS 26.
 
 ## Install
 
@@ -158,6 +159,12 @@ swift test                   # pure logic + ask plumbing + JSON Schema mapping +
 > Building the `ask` path against real macOS 27 APIs needs the Xcode 27 SDK; the
 > current target compiles on macOS 26 with `ask` behind `@available(macOS 27, *)`
 > + runtime availability guards.
+>
+> ⚠️ FoundationModels is still beta, so Apple doesn't guarantee ABI stability across beta
+> builds. Build the `ask` binary with the Xcode 27 beta whose FoundationModels SDK **matches
+> your target macOS 27 runtime** — a mismatch (an older Xcode beta's FM vs a newer OS beta's
+> FM) can SIGSEGV inside a live model call. `scripts/release-ask.sh` warns on a detected
+> mismatch; this constraint goes away once FoundationModels reaches a stable ABI (GA).
 
 ## Usage
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.3.0
 
 Adds `macvis ask --schema <path|json>` — forces a structured JSON answer via Apple's Guided
 Generation (`session.respond(to:schema:)`/`DynamicGenerationSchema`), instead of `ask`'s usual
@@ -79,6 +79,13 @@ mirrors `make-qr`. No document detected is a `bad_request`/`no_document_detected
 is a production command, unlike `document-bounds`). Both exposed as MCP tools; adds a
 `document_bounds` field to `doctor`. Verified round-trip: a perspective-warped synthetic
 document is rectified and the flattened text is re-read correctly through `macvis ocr`.
+
+Build: release builds now use `-Osize`, shrinking the stripped binary ~15% with no measurable
+change in command latency (each call is a fresh process dominated by Vision/FoundationModels,
+not by macvis's own code). Building the `ask`-enabled binary requires the Xcode 27 beta whose
+FoundationModels SDK matches your macOS 27 runtime — FoundationModels is still beta, so its ABI
+isn't stable across beta builds and a mismatch can crash at runtime; `scripts/release-ask.sh`
+now warns on such a mismatch.
 
 ## v0.2.1
 
