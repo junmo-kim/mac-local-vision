@@ -71,3 +71,35 @@ tar -C "$(dirname "$BIN")" -czf "dist/${TARBALL}" "$(basename "$BIN")"
 echo "▸ uploading ${TARBALL} to release ${TAG} (this publishes publicly)…"
 gh release upload "$TAG" "dist/${TARBALL}" "dist/${TARBALL}.sha256" --clobber
 echo "✓ attached ${TARBALL} to ${TAG}"
+
+# Bump the Homebrew tap to this release. The canonical brew asset is the ask superset just
+# uploaded, so the tap's sha256 must match *this* tarball — not the CI-built core one it
+# clobbered. We have that sha right here + this machine has the tap checked out and gh auth,
+# so bump from here (CI only ever sees the core sha, which would break the formula). Non-fatal:
+# the release is already published, so a tap hiccup warns rather than failing the run.
+TAP_DIR=$(brew --repo junmo-kim/tap 2>/dev/null || true)
+TAP_F="${TAP_DIR}/Formula/macvis.rb"
+VER="${TAG#v}"
+if [ -n "$TAP_DIR" ] && [ -f "$TAP_F" ]; then
+  SHA=$(awk '{print $1}' "dist/${TARBALL}.sha256")
+  /usr/bin/sed -i '' -E \
+    -e "s#/download/v[0-9][0-9.]*/macvis-v[0-9][0-9.]*-macos-arm64#/download/${TAG}/macvis-${TAG}-macos-arm64#" \
+    -e "s#sha256 \"[0-9a-f]*\"#sha256 \"${SHA}\"#" \
+    -e "s#version \"[0-9][0-9.]*\"#version \"${VER}\"#" \
+    -e "s#assert_match \"[0-9][0-9.]*\"#assert_match \"${VER}\"#" \
+    "$TAP_F"
+  if git -C "$TAP_DIR" diff --quiet -- "$TAP_F"; then
+    echo "▸ Homebrew tap already at ${VER} — nothing to bump"
+  elif ruby -c "$TAP_F" >/dev/null 2>&1; then
+    if git -C "$TAP_DIR" commit -qam "macvis ${VER}" && git -C "$TAP_DIR" push; then
+      echo "✓ bumped Homebrew tap to ${VER}"
+    else
+      echo "⚠️  Homebrew tap commit/push failed — bump junmo-kim/homebrew-tap manually"
+    fi
+  else
+    echo "⚠️  tap formula failed to parse after bump — reverting; bump manually"
+    git -C "$TAP_DIR" checkout -- "$TAP_F"
+  fi
+else
+  echo "ℹ️  Homebrew tap not checked out here (brew tap junmo-kim/tap) — skipping formula bump."
+fi
