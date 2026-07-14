@@ -22,9 +22,16 @@ No Node, no Python, no runtime dependencies: the OS *is* the dependency.
 
 A **~550 KB stripped single binary** (the frameworks are the OS, nothing is bundled — no
 Node, no Python, no `node_modules`), and every call is a fresh **~0.3 s end-to-end** —
-process launch *plus* recognition, no daemon to keep warm.
+process launch *plus* recognition, no daemon to keep warm:
 
-Versus shipping the image to a cloud vision API: no network round-trip, no vision
+| command | latency |
+| --- | --- |
+| `find` (locate a word) | **0.30 s** |
+| `ocr` (full page) | **0.29 s** |
+
+<sub>Best of 5, on a 1080×2400 screenshot (19 lines, Korean + English), Apple M4.</sub>
+
+Versus shipping that screenshot to a cloud vision API: no network round-trip, no vision
 tokens, no per-call cost, and nothing leaves the machine.
 
 `ask` (multimodal LLM inference, needs macOS 27 (Beta) + Apple Intelligence) is a
