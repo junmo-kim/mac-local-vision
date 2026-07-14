@@ -22,17 +22,9 @@ No Node, no Python, no runtime dependencies: the OS *is* the dependency.
 
 A **~550 KB stripped single binary** (the frameworks are the OS, nothing is bundled — no
 Node, no Python, no `node_modules`), and every call is a fresh **~0.3 s end-to-end** —
-process launch *plus* recognition, no daemon to keep warm:
+process launch *plus* recognition, no daemon to keep warm.
 
-| command | latency |
-| --- | --- |
-| `find` (locate a word) | **0.30 s** |
-| `ocr` (full page) | **0.29 s** |
-| `doctor` | **0.13 s** |
-
-<sub>Best of 5, on a 1080×2400 screenshot (19 lines, Korean + English), Apple M4.</sub>
-
-Versus shipping that screenshot to a cloud vision API: no network round-trip, no vision
+Versus shipping the image to a cloud vision API: no network round-trip, no vision
 tokens, no per-call cost, and nothing leaves the machine.
 
 `ask` (multimodal LLM inference, needs macOS 27 (Beta) + Apple Intelligence) is a
@@ -97,22 +89,24 @@ swift build -c release && cp .build/release/macvis /usr/local/bin/
 
 ## Status
 
-| Command | State | Requires |
-| --- | --- | --- |
-| `ocr` / `find` | ✅ working | Apple Silicon · macOS 26 |
-| `barcode` | ✅ working — QR + every Vision-supported 1D/2D symbology in one command | Apple Silicon · macOS 26 |
-| `qr` | ✅ working — `barcode` restricted to QR only, server-side (no `--symbology` flag) | Apple Silicon · macOS 26 |
-| `classify` | ✅ working — 1,303-label taxonomy; Vision scores every label, so `--min-confidence`/`--top` are applied by the engine, not just a pass-through filter (see note) | Apple Silicon · macOS 26 |
-| `make-qr` | ✅ working — CoreImage, no Vision needed; round-trips through `barcode`/`qr` | any Mac · macOS 26 |
-| `document-bounds` | ✅ working — finds a document's 4 corners (`VNDetectDocumentSegmentationRequest`) | Apple Silicon · macOS 26 |
-| `rectify-document` | ✅ working — detects + perspective-corrects a photographed document into a flattened scan; round-trips through `ocr` | Apple Silicon · macOS 26 |
-| `document-ocr` | ✅ working — structured OCR (title/paragraphs/tables/lists), nested alongside plain-text `ocr` | Apple Silicon · macOS 26 |
-| `classify` | ✅ working — tags an image against Vision's 1,303-label taxonomy | Apple Silicon · macOS 26 |
-| `doctor` | ✅ working | macOS 26 |
-| `sort-faces` / `find-person` | ✅ working — same-session grouping; cross-time identity is approximate (see note) | Apple Silicon · macOS 26 |
-| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/qr/classify/make-qr/document-bounds/rectify-document/document-ocr/doctor as tools (+ask on macOS 27 builds) | macOS 26 |
-| `serve` | ✅ working — HTTP JSON-RPC MCP server for remote/non-Mac nodes | macOS 26 |
-| `ask` | 🟢 Beta — targets a pre-release Apple stack; real end-to-end inference verified on a macOS 27 Beta boot (see note) | macOS 27 (Beta) + Apple Intelligence |
+Everything below runs on **Apple Silicon, macOS 26+** — except `make-qr` (any Mac) and `ask`
+(macOS 27 Beta + Apple Intelligence).
+
+| Command | State |
+| --- | --- |
+| `ocr` / `find` | ✅ working |
+| `barcode` | ✅ working — QR + every Vision-supported 1D/2D symbology in one command |
+| `qr` | ✅ working — `barcode` restricted to QR only, server-side (no `--symbology` flag) |
+| `classify` | ✅ working — 1,303-label taxonomy; Vision scores every label, so `--min-confidence`/`--top` are applied by the engine, not just a pass-through filter (see note) |
+| `make-qr` | ✅ working — CoreImage, no Vision needed; round-trips through `barcode`/`qr` |
+| `document-bounds` | ✅ working — finds a document's 4 corners (`VNDetectDocumentSegmentationRequest`) |
+| `rectify-document` | ✅ working — detects + perspective-corrects a photographed document into a flattened scan; round-trips through `ocr` |
+| `document-ocr` | ✅ working — structured OCR (title/paragraphs/tables/lists), nested alongside plain-text `ocr` |
+| `doctor` | ✅ working |
+| `sort-faces` / `find-person` | ✅ working — same-session grouping; cross-time identity is approximate (see note) |
+| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/qr/classify/make-qr/document-bounds/rectify-document/document-ocr/doctor as tools (+ask on macOS 27 builds) |
+| `serve` | ✅ working — HTTP JSON-RPC MCP server for remote/non-Mac nodes |
+| `ask` | 🟢 Beta — targets a pre-release Apple stack; real end-to-end inference verified on a macOS 27 Beta boot (see note) |
 
 > **`sort-faces` accuracy**: faces are grouped by an image feature print over the face
 > crop (Apple exposes no public face-embedding API). This reliably groups near-duplicate
