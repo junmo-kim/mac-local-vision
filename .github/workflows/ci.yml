@@ -20,10 +20,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Select Xcode 26.4.1
+      - name: Select Xcode 26.6
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '26.4.1'
+          xcode-version: '26.6'
 
       - name: Versions
         run: swift --version && xcodebuild -version
