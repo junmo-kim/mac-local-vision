@@ -69,6 +69,14 @@ BIN=.build/release/macvis
 # Strip *after* linking, then re-sign — see the top-of-file note on why -Xlinker -s is avoided.
 strip -x "$BIN"
 codesign --force -s - "$BIN"
+
+# Launch smoke test — a clean compile says nothing about whether the binary actually starts;
+# a bad toolchain/strip/sign combination can produce one that's killed on launch with no
+# build-time error (observed once, 2026-07-24, not reliably reproducible — treat any launch
+# failure as a real signal regardless). Refuse to publish if it doesn't survive.
+"$(dirname "${BASH_SOURCE[0]}")/../Tests/Integration/ask-binary-launch-smoke.sh" "$BIN" \
+  || { echo "✗ ask binary failed its launch smoke test — refusing to publish"; exit 1; }
+
 # The canonical release binary: this ask-enabled build runs on macOS 26+ (ask just returns
 # needs_macos_27 there) and enables ask on macOS 27, so it's a strict superset of the core
 # build. It overwrites (--clobber) the CI-built core asset under the same canonical name.

@@ -12,7 +12,14 @@ swift test                   # must stay green
 ```
 
 The `ask` (macOS 27 multimodal) path is compiled out by default. Build it against the macOS 27
-SDK (Xcode 27) with `-Xswiftc -DMACVIS_ASK_IMAGE`; see `scripts/release-ask.sh`.
+SDK (Xcode 27) with `-Xswiftc -DMACVIS_ASK_IMAGE`; see `scripts/release-ask.sh`. A clean compile
+says nothing about whether the binary actually *launches* — a bad toolchain/strip/sign
+combination can produce one that gets killed on start with no build-time error. Run this against
+any freshly built ask-enabled binary, not just at release time:
+
+```bash
+Tests/Integration/ask-binary-launch-smoke.sh .build/release/macvis
+```
 
 ## Pull requests
 
