@@ -83,8 +83,17 @@ tar xzf macvis-*-macos-arm64.tar.gz
 sudo mv macvis /usr/local/bin/                        # or ~/.local/bin on your $PATH
 ```
 
-The binary is ad-hoc signed (not notarized), so a directly-downloaded copy may trip Gatekeeper —
-approve it under System Settings → Privacy & Security. (Homebrew / mise installs avoid this.)
+The binary is ad-hoc signed (not notarized). A browser download tags the file with a quarantine
+attribute, and running a quarantined ad-hoc binary from Terminal doesn't show a System
+Settings prompt to approve — it just gets silently killed (`Killed: 9`). Clear the
+attribute before running:
+
+```bash
+xattr -d com.apple.quarantine /usr/local/bin/macvis   # or wherever you moved it
+```
+
+(Homebrew / mise / `gh release download` / `curl` don't set quarantine, so this only affects a
+tarball downloaded straight from the Releases page in a browser.)
 
 **From source** (Swift 6.2+ toolchain / Xcode 26):
 
