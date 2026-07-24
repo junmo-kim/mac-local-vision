@@ -60,9 +60,6 @@ enum HTTPServer {
         guard let listener = try? NWListener(using: params, on: nwPort) else {
             IO.warn("error: could not bind to \(host):\(port) (port may be in use)"); return nil
         }
-        // Cap concurrent connections: each handle() holds up to ~20 MB; 32 gives plenty
-        // of headroom for any realistic single-Mac workload without unbounded memory use.
-        listener.newConnectionLimit = 32
         return listener
     }
 
