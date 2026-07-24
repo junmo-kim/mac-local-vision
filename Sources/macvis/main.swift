@@ -2,7 +2,7 @@ import Foundation
 import VisionCore
 import SemanticEngine
 
-let version = "0.3.0"
+let version = "0.3.1"
 
 func printUsage() {
     let usage = """

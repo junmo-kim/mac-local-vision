@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.1
+
+Fixes `macvis serve` refusing new connections after a leftover 32-connection cap. Also
+corrects the README's Gatekeeper guidance — a quarantined ad-hoc binary run from Terminal
+is killed outright, not gated by a System Settings prompt; clear it with
+`xattr -d com.apple.quarantine` (Homebrew / mise / `curl` unaffected).
+
 ## v0.3.0
 
 `macvis` grows from OCR/find into a full on-device vision toolkit — one Pure-Swift binary, zero dependencies, every command on the CLI **and** as an MCP tool.
