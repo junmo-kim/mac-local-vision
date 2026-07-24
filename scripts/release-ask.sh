@@ -14,14 +14,20 @@
 # would normally be forward-compatible. This script warns on a detected mismatch (below).
 # Once FoundationModels ships a stable ABI (GA), this concern goes away.
 #
+# ⚠️ link-time strip (`-Xlinker -s`) + the Xcode-27.0.0-Beta.4.app toolchain produces a binary
+# whose ad-hoc signature the kernel rejects at launch on macOS 26 stable (cs_invalid_page ->
+# SIGKILL) — not an FM-version issue, confirmed by controlled A/B (same SDK, strip on vs off).
+# So this script strips *after* linking (`strip -x` + a fresh ad-hoc re-sign) instead of via
+# -Xlinker -s: same size reduction, no corrupted signature.
+#
 # Usage:   scripts/release-ask.sh <tag>          e.g. scripts/release-ask.sh v0.1.0
-# Env:     DEVELOPER_DIR  override Xcode path (default: Xcode-27.0.0-Beta.3.app)
+# Env:     DEVELOPER_DIR  override Xcode path (default: Xcode-27.0.0-Beta.4.app)
 # Needs:   Xcode 27 beta (matching the target runtime's FoundationModels), gh (authenticated).
 # NOTE:    the upload step PUBLISHES to the public GitHub release — run it deliberately.
 set -euo pipefail
 
 TAG="${1:?usage: scripts/release-ask.sh <tag>  (e.g. v0.1.0)}"
-DEV="${DEVELOPER_DIR:-/Applications/Xcode-27.0.0-Beta.3.app/Contents/Developer}"
+DEV="${DEVELOPER_DIR:-/Applications/Xcode-27.0.0-Beta.4.app/Contents/Developer}"
 
 [ -d "$DEV" ] || { echo "✗ Xcode 27 SDK not found at: $DEV  (set DEVELOPER_DIR)"; exit 1; }
 command -v gh >/dev/null || { echo "✗ gh CLI not found / not on PATH"; exit 1; }
@@ -57,9 +63,12 @@ if grep -rInE 'URLSession|URLRequest|NWConnection|NWListener|NWPath|NWBrowser|NW
 fi
 
 echo "▸ building ask-enabled binary ($(basename "$(dirname "$(dirname "$DEV")")"))…"
-DEVELOPER_DIR="$DEV" swift build -c release -Xswiftc -DMACVIS_ASK_IMAGE -Xlinker -s
+DEVELOPER_DIR="$DEV" swift build -c release -Xswiftc -DMACVIS_ASK_IMAGE
 
 BIN=.build/release/macvis
+# Strip *after* linking, then re-sign — see the top-of-file note on why -Xlinker -s is avoided.
+strip -x "$BIN"
+codesign --force -s - "$BIN"
 # The canonical release binary: this ask-enabled build runs on macOS 26+ (ask just returns
 # needs_macos_27 there) and enables ask on macOS 27, so it's a strict superset of the core
 # build. It overwrites (--clobber) the CI-built core asset under the same canonical name.
