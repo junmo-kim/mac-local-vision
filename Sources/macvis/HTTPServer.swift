@@ -78,8 +78,15 @@ enum HTTPServer {
             return
         }
 
+        // QUERY /{tool}?<options> — one-shot raw-bytes entry point for remote callers:
+        // body carries the file bytes directly (no base64 round-trip, no two-step ref).
+        if req.method == "QUERY" {
+            await handleQuery(conn, req: req)
+            return
+        }
+
         guard req.method == "POST", req.path == "/mcp" else {
-            let msg = "macvis serve only handles POST /mcp"
+            let msg = "macvis serve only handles POST /mcp and QUERY /{tool}"
             await sendHTTPResponse(conn, status: 404, body: Data(msg.utf8))
             return
         }
@@ -109,6 +116,56 @@ enum HTTPServer {
         }
 
         await sendHTTPResponse(conn, status: 200, body: respData, contentType: "application/json")
+    }
+
+    // MARK: - QUERY /{tool}
+
+    /// Handle `QUERY /{tool}?key=value&...` with the raw file bytes as the body.
+    /// Query params become tool args (booleans/numbers typed, comma-joined values
+    /// become string arrays); the body becomes base64 `data` — except `make-qr`,
+    /// whose body is the UTF-8 `text` to encode.
+    private static func handleQuery(_ conn: NWConnection, req: HTTPRequest) async {
+        let (tool, queryString) = splitPath(req.path)
+        guard let tool, !tool.isEmpty else {
+            await sendHTTPResponse(conn, status: 404, body: Data("usage: QUERY /{tool}?<options> (e.g. /ocr?languages=ko-KR)".utf8))
+            return
+        }
+        var args = QueryString.parse(queryString)
+        // RFC 10008 §2: a QUERY without Content-Type is malformed (MUST fail). We do
+        // not police the media type value itself — bodies here are opaque bytes — so
+        // this is presence-only, a documented relaxation of the "inconsistent with
+        // payload" half of the rule.
+        if req.headers["content-type"] == nil {
+            await sendHTTPResponse(conn, status: 400,
+                                   body: Data("Content-Type header is required for QUERY".utf8))
+            return
+        }
+        if tool == "make-qr" {
+            args["text"] = String(data: req.body, encoding: .utf8) ?? ""
+        } else if !req.body.isEmpty {
+            args["data"] = req.body.base64EncodedString()
+        }
+        guard let visionReq = MCPTools.request(for: tool, args: args) else {
+            await sendHTTPResponse(conn, status: 404, body: Data("unknown tool: \(tool)".utf8), contentType: "text/plain")
+            return
+        }
+        let fmt = OutputFormat(rawValue: (args["format"] as? String) ?? "yaml") ?? .yaml
+        do {
+            let result = try await VisionService.handle(visionReq)
+            await sendHTTPResponse(conn, status: 200, body: Data(result.value.render(as: fmt).utf8),
+                                   contentType: fmt == .json ? "application/json" : "text/yaml")
+        } catch let e as ServiceError {
+            await sendHTTPResponse(conn, status: 400, body: Data(e.envelope().render(as: fmt).utf8),
+                                   contentType: fmt == .json ? "application/json" : "text/yaml")
+        } catch {
+            await sendHTTPResponse(conn, status: 500, body: Data("error: \(error)".utf8))
+        }
+    }
+
+    private static func splitPath(_ path: String) -> (tool: String?, query: String?) {
+        guard let qIdx = path.firstIndex(of: "?") else { return (String(path.dropFirst()), nil) }
+        return (String(path[path.startIndex..<qIdx].dropFirst()),
+                String(path[path.index(after: qIdx)...]))
     }
 
     /// Accumulate raw bytes until we have the complete HTTP request:
@@ -163,7 +220,7 @@ enum HTTPServer {
                     // POST/PUT/PATCH MUST include Content-Length — reject with 411.
                     // GET/HEAD/DELETE legitimately have no body; default their CL to 0.
                     // RFC 9110 §15.5.12 forbids 411 for methods that do not carry a body.
-                    let bodyMethod = reqMethod == "POST" || reqMethod == "PUT" || reqMethod == "PATCH"
+                    let bodyMethod = reqMethod == "POST" || reqMethod == "PUT" || reqMethod == "PATCH" || reqMethod == "QUERY"
                     if bodyMethod {
                         let errJSON = #"{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"Length Required"}}"#
                         await sendHTTPResponse(conn, status: 411, body: Data(errJSON.utf8), contentType: "application/json")
