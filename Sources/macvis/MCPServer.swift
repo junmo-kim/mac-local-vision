@@ -145,7 +145,10 @@ enum MCPTools {
             left/top/width/height = bounding box; top-left origin; physical pixels. Recognition \
             languages auto-detect from the system locale (override via languages). \
             Use this to read a whole screen; use `find` to target one specific word. \
-            Remote callers (non-Mac nodes): send the image as base64 in the `data` field instead of `path`.
+            Remote callers (non-Mac nodes): send the image as base64 in the `data` field instead of `path`, or use HTTP method \
+            QUERY (RFC 10008) — e.g. curl -X QUERY "http://host:9090/ocr?languages=ko-KR&format=json" \
+            --data-binary @file.jpg where the body is raw file bytes and options go in the query \
+            string (make-qr takes UTF-8 text as its body).
             """,
             "inputSchema": [
                 "type": "object",
@@ -180,7 +183,10 @@ enum MCPTools {
             present, the box is the whole text line (click point is line-center, not word-tight). \
             Coordinate convention: top-left origin, physical pixels. Lower minConfidence for \
             headless/blurry renders. Languages auto-detect from the system locale. \
-            Remote callers (non-Mac nodes): send the image as base64 in the `data` field instead of `path`.
+            Remote callers (non-Mac nodes): send the image as base64 in the `data` field instead of `path`, or use HTTP method \
+            QUERY (RFC 10008) — e.g. curl -X QUERY "http://host:9090/ocr?languages=ko-KR&format=json" \
+            --data-binary @file.jpg where the body is raw file bytes and options go in the query \
+            string (make-qr takes UTF-8 text as its body).
             """,
             "inputSchema": [
                 "type": "object",
@@ -214,7 +220,10 @@ enum MCPTools {
             center; left/top/width/height = bounding box; top-left origin; physical pixels. \
             Restrict scanning to specific symbologies via `symbologies` (e.g. ["qr"]) to skip \
             false positives from other code types in a busy image. Remote callers (non-Mac \
-            nodes): send the image as base64 in the `data` field instead of `path`.
+            nodes): send the image as base64 in the `data` field instead of `path`, or use HTTP method \
+            QUERY (RFC 10008) — e.g. curl -X QUERY "http://host:9090/ocr?languages=ko-KR&format=json" \
+            --data-binary @file.jpg where the body is raw file bytes and options go in the query \
+            string (make-qr takes UTF-8 text as its body).
             """,
             "inputSchema": [
                 "type": "object",
@@ -244,7 +253,9 @@ enum MCPTools {
             `codes` array; `code_count: 0` (not an error) when no QR is found. Coordinate \
             convention: x,y = click center; left/top/width/height = bounding box; top-left \
             origin; physical pixels. Remote callers (non-Mac nodes): send the image as base64 \
-            in the `data` field instead of `path`.
+            in the `data` field instead of `path`, or use HTTP method QUERY (RFC 10008) — e.g. \
+            curl -X QUERY "http://host:9090/qr?format=json" --data-binary @file.jpg where the \
+            body is raw file bytes and options go in the query string.
             """,
             "inputSchema": [
                 "type": "object",
@@ -278,7 +289,9 @@ enum MCPTools {
             number of much higher-confidence labels. Use `ocr`/`find` for reading text, \
             `barcode`/`qr` for codes — use `classify` when you need a quick semantic gist \
             of what an image contains. Remote callers (non-Mac nodes): send the image as \
-            base64 in the `data` field instead of `path`.
+            base64 in the `data` field instead of `path`, or use HTTP method QUERY (RFC 10008) — \
+            e.g. curl -X QUERY "http://host:9090/classify?format=json" --data-binary @file.jpg \
+            where the body is raw file bytes and options go in the query string.
             """,
             "inputSchema": [
                 "type": "object",
@@ -338,7 +351,9 @@ enum MCPTools {
             `barcode`'s `code_count: 0`. Coordinate convention: top-left origin, physical \
             pixels, matching `find`/`barcode`. When multiple document-like regions are present, \
             reports the largest by area. Remote callers (non-Mac nodes): send the image as \
-            base64 in the `data` field instead of `path`.
+            base64 in the `data` field instead of `path`, or use HTTP method QUERY (RFC 10008) — \
+            e.g. curl -X QUERY "http://host:9090/document-bounds" --data-binary @photo.jpg where \
+            the body is raw file bytes and options go in the query string.
             """,
             "inputSchema": [
                 "type": "object",
@@ -369,7 +384,10 @@ enum MCPTools {
             `found: false` outcome), this is a production command: if no document is detected \
             it returns a structured `bad_request`/`no_document_detected` error, since there is \
             nothing to rectify. Feed the result to `ocr` to read the flattened text. Remote \
-            callers (non-Mac nodes): send the image as base64 in the `data` field instead of `path`.
+            callers (non-Mac nodes): send the image as base64 in the `data` field instead of `path`, or use HTTP method \
+            QUERY (RFC 10008) — e.g. curl -X QUERY "http://host:9090/ocr?languages=ko-KR&format=json" \
+            --data-binary @file.jpg where the body is raw file bytes and options go in the query \
+            string (make-qr takes UTF-8 text as its body).
             """,
             "inputSchema": [
                 "type": "object",
@@ -400,7 +418,10 @@ enum MCPTools {
             top-left origin; physical pixels — one box per paragraph/table/list, not per word \
             or line (use `ocr --words` for that level of detail). Tables/lists nested inside a \
             cell or list item are flattened to their text only, not walked recursively. Remote \
-            callers (non-Mac nodes): send the image as base64 in the `data` field instead of `path`.
+            callers (non-Mac nodes): send the image as base64 in the `data` field instead of `path`, or use HTTP method \
+            QUERY (RFC 10008) — e.g. curl -X QUERY "http://host:9090/ocr?languages=ko-KR&format=json" \
+            --data-binary @file.jpg where the body is raw file bytes and options go in the query \
+            string (make-qr takes UTF-8 text as its body).
             """,
             "inputSchema": [
                 "type": "object",
