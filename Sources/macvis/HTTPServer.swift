@@ -10,12 +10,13 @@ import VisionCore
 /// Transport: HTTP/1.1, one request per connection (Connection: close). Each JSON-RPC
 /// request is handled in an isolated Task; the server itself is stateless.
 enum HTTPServer {
-    static func run(host: String, port: UInt16) async -> Int32 {
+    static func run(host: String, port: UInt16, maxBodyMiB: Int = 20) async -> Int32 {
         guard let listener = makeListener(host: host, port: port) else {
             IO.warn("error: failed to create listener on \(host):\(port)")
             return ExitCode.runtimeError.rawValue
         }
 
+        let maxBodyBytes = maxBodyMiB * 1_048_576
         let listenerFailed = OSAllocatedUnfairLock(initialState: false)
         let (connStream, connCont) = AsyncStream<NWConnection>.makeStream()
 
@@ -38,7 +39,7 @@ enum HTTPServer {
         listener.start(queue: .global(qos: .userInitiated))
 
         for await conn in connStream {
-            Task { await handle(conn) }
+            Task { await handle(conn, maxBodyBytes: maxBodyBytes) }
         }
 
         listener.cancel()
@@ -63,11 +64,11 @@ enum HTTPServer {
         return listener
     }
 
-    private static func handle(_ conn: NWConnection) async {
+    private static func handle(_ conn: NWConnection, maxBodyBytes: Int) async {
         conn.start(queue: .global(qos: .userInitiated))
         defer { conn.cancel() }
 
-        guard let raw = await receiveHTTPRequest(conn) else { return }
+        guard let raw = await receiveHTTPRequest(conn, cap: maxBodyBytes) else { return }
 
         let req: HTTPRequest
         do {
@@ -170,14 +171,14 @@ enum HTTPServer {
 
     /// Accumulate raw bytes until we have the complete HTTP request:
     /// all headers (`\r\n\r\n`) plus exactly `Content-Length` body bytes.
-    private static func receiveHTTPRequest(_ conn: NWConnection) async -> Data? {
+    private static func receiveHTTPRequest(_ conn: NWConnection, cap: Int) async -> Data? {
         let sep = Data("\r\n\r\n".utf8)
         var buf = Data()
         var expectedBodyLen: Int? = nil
         var bodyStartOffset: Int? = nil  // cached once so break-check is O(1) per chunk
         var peerClosed = false            // distinguish cap-hit from dropped connection
 
-        while buf.count < 20_971_520 {  // soft 20 MB cap; one 64 KB chunk may push buf up to ~20.06 MB
+        while buf.count < cap {  // soft body cap; one final 64 KB chunk may overshoot slightly
             let chunk = await withCheckedContinuation { (c: CheckedContinuation<Data?, Never>) in
                 conn.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, _, error in
                     // Deliver data even when a connection-end error arrives simultaneously

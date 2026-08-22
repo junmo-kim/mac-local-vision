@@ -332,10 +332,18 @@ enum ServeCommand {
             }
             rawPort = p
         }
+        var maxBodyMiB = 20
+        if let s = parsed.option("max-body") {
+            guard let m = Int(s), m > 0, m <= 20_971_520 else {
+                IO.warn("error: --max-body must be a positive integer (MiB), got: \(s)")
+                return ExitCode.usage.rawValue
+            }
+            maxBodyMiB = m
+        }
         if host == "0.0.0.0" || host == "::" {
             IO.warn("warning: serve is listening on all interfaces with no authentication — " +
                     "restrict access with a firewall or use --host 127.0.0.1 for local-only.")
         }
-        return await HTTPServer.run(host: host, port: rawPort)
+        return await HTTPServer.run(host: host, port: rawPort, maxBodyMiB: maxBodyMiB)
     }
 }
