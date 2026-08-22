@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.4.0
+
+`macvis serve` gains a one-shot entry point for remote callers: send raw file bytes
+as the request body with HTTP method `QUERY` (RFC 10008) to `/{tool}?<options>` —
+e.g. `curl -X QUERY "http://host:9090/ocr?languages=ko-KR&format=json" --data-binary @file.jpg`.
+No base64 encoding, no JSON envelope, no two-step upload: the body is the image/PDF
+(make-qr takes UTF-8 text instead), options ride in the query string, and the tool's
+usual YAML/JSON output comes straight back. All ten tools are reachable this way,
+and every MCP tool description now teaches the shape so agents can pattern-match it.
+Requests without a `Content-Type` header are rejected with 400. The server's request
+body cap is now operator-tunable via `serve --max-body <MiB>` (default 20).
+Also in this release: a launch smoke test for the `ask`-enabled release binary.
+
 ## v0.3.1
 
 Fixes `macvis serve` refusing new connections after a leftover 32-connection cap. Also
