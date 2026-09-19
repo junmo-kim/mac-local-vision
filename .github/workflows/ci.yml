@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "feature/**"
   pull_request:
     branches: [main]
 
@@ -31,6 +33,9 @@ jobs:
 
       - name: Release binary smoke test
         run: Tests/Integration/release-binary-launch-smoke.sh .build/release/macvis
+
+      - name: HTTP listener lifecycle test
+        run: Tests/Integration/serve-lifecycle.sh .build/release/macvis
 
       - name: Upload canonical release binary
         uses: actions/upload-artifact@v4

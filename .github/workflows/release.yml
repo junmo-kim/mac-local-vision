@@ -24,6 +24,12 @@ jobs:
           swift build -c release -Xlinker -s
           BIN=.build/release/macvis
           Tests/Integration/release-binary-launch-smoke.sh "$BIN"
+          EXPECTED_VERSION="macvis ${GITHUB_REF_NAME#v}"
+          ACTUAL_VERSION="$("$BIN" --version)"
+          if [ "$ACTUAL_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "::error::tag/binary version mismatch: expected '$EXPECTED_VERSION', got '$ACTUAL_VERSION'"
+            exit 1
+          fi
           TARBALL="macvis-${GITHUB_REF_NAME}-macos-arm64.tar.gz"
           mkdir -p dist
           tar -C "$(dirname "$BIN")" -czf "dist/${TARBALL}" "$(basename "$BIN")"

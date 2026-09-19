@@ -17,6 +17,17 @@ import CoreGraphics
 import Vision
 import VisionCore  // shared image loader (page/scale/PDF/EXIF) — same contract as ocr/find
 
+enum AskSessionPlan: Equatable {
+    case plain
+    case tools
+    case toolsThenSchema
+
+    static func select(visionTools: Bool, hasSchema: Bool) -> Self {
+        if !visionTools { return .plain }
+        return hasSchema ? .toolsThenSchema : .tools
+    }
+}
+
 /// Real Apple Foundation Models backend.
 ///
 /// Multimodal image input requires macOS 27 and an Apple Intelligence eligible
@@ -79,7 +90,8 @@ public struct AFMEngine: SemanticEngine {
                 """
             let session: LanguageModelSession
             let effectivePrompt: String
-            if visionTools, schema != nil {
+            switch AskSessionPlan.select(visionTools: visionTools, hasSchema: schema != nil) {
+            case .toolsThenSchema:
                 // FoundationModels 2.0.68 can confuse a Guided Generation schema reference
                 // with OCRTool's attachmentLabel, and can then stall indefinitely. Keep tool
                 // execution and Guided Generation in separate on-device sessions: first gather
@@ -103,13 +115,13 @@ public struct AFMEngine: SemanticEngine {
                     </vision_tool_evidence>
                     """
                 session = LanguageModelSession()
-            } else if visionTools {
+            case .tools:
                 session = LanguageModelSession(
                     model: SystemLanguageModel.default,
                     tools: [OCRTool(), BarcodeReaderTool()],
                     instructions: toolInstructions)
                 effectivePrompt = prompt
-            } else {
+            case .plain:
                 session = LanguageModelSession()  // on-device SystemLanguageModel.default
                 effectivePrompt = prompt
             }

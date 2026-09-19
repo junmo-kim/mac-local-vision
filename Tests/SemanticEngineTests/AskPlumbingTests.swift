@@ -21,6 +21,14 @@ struct AskPlumbingTests {
         #expect(out.compute == .onDevice)
     }
 
+    @Test("Vision tools select the intended session topology")
+    func visionToolsSessionPlan() {
+        #expect(AskSessionPlan.select(visionTools: false, hasSchema: false) == .plain)
+        #expect(AskSessionPlan.select(visionTools: false, hasSchema: true) == .plain)
+        #expect(AskSessionPlan.select(visionTools: true, hasSchema: false) == .tools)
+        #expect(AskSessionPlan.select(visionTools: true, hasSchema: true) == .toolsThenSchema)
+    }
+
     @Test("AskCompute raw value is the documented wire string")
     func computeRawValues() {
         #expect(AskCompute.onDevice.rawValue == "on-device")
