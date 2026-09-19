@@ -431,6 +431,7 @@ enum VisionService {
         do {
             let outcome = try await AFMEngine().ask(imagePath: path, prompt: prompt,
                                                     stream: req.stream ?? false,
+                                                    visionTools: req.visionTools ?? false,
                                                     page: req.page ?? 1, scale: req.scale ?? 2.0,
                                                     schema: schema)
             let answer: YAMLValue

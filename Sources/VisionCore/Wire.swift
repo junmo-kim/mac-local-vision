@@ -12,6 +12,7 @@ public struct VisionRequest: Codable, Sendable {
     public var words: Bool?
     public var boxes: Bool?
     public var stream: Bool?
+    public var visionTools: Bool?      // ask: opt in to OCRTool + BarcodeReaderTool
     public var minConfidence: Double?
     public var languages: [String]?
     public var page: Int?
@@ -35,6 +36,7 @@ public struct VisionRequest: Codable, Sendable {
     public init(op: String, path: String? = nil, data: String? = nil,
                 target: String? = nil, prompt: String? = nil,
                 fast: Bool? = nil, words: Bool? = nil, boxes: Bool? = nil, stream: Bool? = nil,
+                visionTools: Bool? = nil,
                 minConfidence: Double? = nil, languages: [String]? = nil,
                 page: Int? = nil, scale: Double? = nil, format: String? = nil,
                 symbologies: [String]? = nil, text: String? = nil, outPath: String? = nil,
@@ -43,6 +45,7 @@ public struct VisionRequest: Codable, Sendable {
         self.op = op; self.path = path; self.data = data
         self.target = target; self.prompt = prompt
         self.fast = fast; self.words = words; self.boxes = boxes; self.stream = stream
+        self.visionTools = visionTools
         self.minConfidence = minConfidence; self.languages = languages
         self.page = page; self.scale = scale; self.format = format
         self.symbologies = symbologies

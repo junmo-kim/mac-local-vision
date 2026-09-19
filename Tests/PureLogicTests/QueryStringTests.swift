@@ -44,6 +44,8 @@ final class QueryStringTests: XCTestCase {
     func testBooleans() {
         XCTAssertEqual(value("words=true", "words"), "bool:true")
         XCTAssertEqual(value("words=false", "words"), "bool:false")
+        XCTAssertEqual(value("visionTools=true", "visionTools"), "bool:true")
+        XCTAssertEqual(value("visionTools=false", "visionTools"), "bool:false")
     }
 
     func testNumbersIncludingZero() {

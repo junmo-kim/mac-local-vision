@@ -9,7 +9,7 @@ public struct MockEngine: SemanticEngine {
         self.response = response
     }
 
-    public func ask(imagePath: String, prompt: String, stream: Bool,
+    public func ask(imagePath: String, prompt: String, stream: Bool, visionTools: Bool,
                     page: Int, scale: Double, schema: GenerationSchema?) async throws -> AskOutcome {
         AskOutcome(text: response, compute: .onDevice)
     }

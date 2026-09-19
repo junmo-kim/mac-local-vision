@@ -30,4 +30,11 @@ struct CLIHelpTests {
         #expect(u != nil)
         #expect(u?.contains("--symbology") == false, "qr must not expose --symbology — it's always QR-only")
     }
+
+    @Test("ask help advertises the opt-in Vision tools flag")
+    func askVisionToolsHelp() {
+        let usage = CLIHelp.usage(for: "ask")
+        #expect(usage?.contains("--vision-tools") == true)
+        #expect(usage?.contains("may add latency") == true)
+    }
 }

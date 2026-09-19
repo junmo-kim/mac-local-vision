@@ -36,7 +36,7 @@ public protocol SemanticEngine: Sendable {
     /// the crash-defense ordering: the pre-flight availability gate runs identically either
     /// way, before any real model call). Building `schema` from a caller-supplied JSON Schema
     /// is `JSONSchemaMapper.map`'s job, kept fully outside this call.
-    func ask(imagePath: String, prompt: String, stream: Bool,
+    func ask(imagePath: String, prompt: String, stream: Bool, visionTools: Bool,
              page: Int, scale: Double, schema: GenerationSchema?) async throws -> AskOutcome
 }
 

@@ -143,6 +143,13 @@ Everything below runs on **Apple Silicon, macOS 26+** — except `make-qr` (any 
 > error instead of starting inference. The same binary keeps all other commands available on
 > macOS 26.
 
+> **`ask --vision-tools`** opts in to Apple's on-device Vision `OCRTool` and
+> `BarcodeReaderTool` when exact text or barcode payloads matter. It is off by default, may add
+> latency, and does not send image data off the Mac. With `--schema`, macvis first gathers tool
+> evidence and then runs Guided Generation in a separate on-device session; this avoids the
+> FoundationModels 2.0.68 tool/schema attachment-reference failure while preserving structured
+> output.
+
 > **`ask --schema`** forces a structured JSON answer via Apple's Guided Generation
 > (`session.respond(to:schema:)`/`DynamicGenerationSchema`, available since the ordinary macOS 26
 > SDK — independent of the macOS-27-only multimodal image path). Give it a JSON Schema (a file
@@ -180,6 +187,7 @@ macvis document-bounds ./receipt.jpg                     # find a document's 4 c
 macvis rectify-document ./receipt.jpg --out ./flat.png  # flatten a photographed document
 macvis document-ocr ./invoice.png                        # title/paragraphs/tables/lists, structured
 macvis ask ./design.png --prompt "main theme color?"    # needs macOS 27 + Apple Intelligence
+macvis ask ./ticket.png --prompt "read all text and decode the QR" --vision-tools  # precise OCR/barcode assistance
 macvis ask ./receipt.png --prompt "extract the fields" --schema ./receipt-schema.json  # structured JSON, Guided Generation
 macvis doctor                                           # which modes work here
 ```
