@@ -75,6 +75,12 @@ macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photo
   not word-tight.
 - Recognition languages auto-detect from the system locale; override with `--lang ko-KR,en-US`.
 - `find` filters at `--min-confidence 0.3` by default (`ocr` keeps everything); lower it for blurry/headless renders.
+- `segment` never downloads model assets implicitly. If it returns
+  `segment_unavailable/assets_not_ready`, use `--download-assets` only when the user explicitly
+  wants to install the assets, then retry without changing the point/box seed.
+- `doctor.segment: "unknown: assets_not_ready"` means Vision has not established readiness
+  in this process, not that the model is necessarily missing. Try a normal segment call first.
+- `segment` reports native mask `width`/`height` separately from input `image_width`/`image_height` (upright pixels after PDF rasterization). Mask resolution varies by quality. Map input pixels with `x * width / image_width`, `y * height / image_height`, or resize the mask to the input raster before overlaying. Foreground is white, background black.
 
 `classify` scores an image against Vision's 1,303-label taxonomy (identifiers are
 unlocalized technical names, e.g. `outdoor`/`document`/`people` — not meant for direct UI

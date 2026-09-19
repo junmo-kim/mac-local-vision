@@ -50,3 +50,17 @@ func optInt(_ args: ParsedArgs, _ key: String) throws -> Int? {
     }
     return value
 }
+
+func optNumericList(_ args: ParsedArgs, _ key: String) throws -> [Double]? {
+    guard let raw = args.option(key) else {
+        if args.flag(key) {
+            throw CLIError(message: "invalid --\(key): expected comma-separated numbers")
+        }
+        return nil
+    }
+    do {
+        return try SegmentationParameters.numericList(raw)
+    } catch {
+        throw CLIError(message: "invalid --\(key): \(raw) (expected comma-separated numbers)")
+    }
+}

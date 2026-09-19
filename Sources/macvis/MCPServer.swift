@@ -71,12 +71,12 @@ enum MCPServer {
             return errorResp((-32602, "Missing tool name"), id: id)
         }
         let args = params["arguments"] as? [String: Any] ?? [:]
-        guard let req = MCPTools.request(for: name, args: args) else {
-            return errorResp((-32602, "Unknown tool: \(name)"), id: id)
-        }
         // Default to YAML (token-lean, readable for an LLM); honor json on request.
         let fmt = OutputFormat(rawValue: (args["format"] as? String) ?? "yaml") ?? .yaml
         do {
+            guard let req = try MCPTools.request(for: name, args: args) else {
+                return errorResp((-32602, "Unknown tool: \(name)"), id: id)
+            }
             let result = try await VisionService.handle(req)
             // find-not-found (exitCode 1) is a valid answer, not a tool error.
             return toolTextResp(result.value.render(as: fmt), isError: false, id: id)
@@ -124,7 +124,7 @@ enum MCPServer {
 /// non-Sendable `[String: Any]` literals don't become shared mutable global state.
 enum MCPTools {
     static var all: [[String: Any]] {
-        [ocr, find, barcode, qr, classify, makeQR, documentBounds, rectifyDocument, documentOCR, doctor, ask]
+        [ocr, find, barcode, qr, classify, segment, makeQR, documentBounds, rectifyDocument, documentOCR, doctor, ask]
     }
 
     static var ocr: [String: Any] {
@@ -443,6 +443,38 @@ enum MCPTools {
         ]
     }
 
+    static var segment: [String: Any] {
+        [
+            "name": "segment",
+            "description": """
+            Segment one object from an image or PDF using a top-left pixel point or box. \
+            Runs locally with Vision on macOS 27. Provide exactly one seed. Model assets are \
+            never downloaded unless downloadAssets=true. Omit outPath to receive a grayscale \
+            PNG mask as base64 image_data. width/height describe the native mask resolution, \
+            which varies by quality; image_width/image_height describe the upright input \
+            raster after PDF scale. Map input pixels by x*width/image_width and \
+            y*height/image_height, or resize the mask to the input raster before overlaying.
+            """,
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "path": ["type": "string", "description": "Local image or PDF path. Required if data is absent."],
+                    "data": ["type": "string", "description": "Base64 image or PDF. Takes precedence over path."],
+                    "point": ["type": "array", "items": ["type": "number"], "minItems": 2, "maxItems": 2,
+                              "description": "Top-left pixel seed [x,y]. Use exactly one of point or box."],
+                    "box": ["type": "array", "items": ["type": "number"], "minItems": 4, "maxItems": 4,
+                            "description": "Top-left pixel seed [x,y,width,height]. Use exactly one of point or box."],
+                    "quality": ["type": "string", "enum": ["accurate", "balanced", "fast"], "description": "Default balanced."],
+                    "downloadAssets": ["type": "boolean", "description": "Explicitly download missing segmentation assets. Default false."],
+                    "outPath": ["type": "string", "description": "Local mask PNG destination. Omit for base64 image_data."],
+                    "page": ["type": "integer", "description": "PDF page, 1-based. Default 1."],
+                    "scale": ["type": "number", "description": "PDF rasterization scale. Default 2.0."],
+                    "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
+                ],
+            ],
+        ]
+    }
+
     static var ask: [String: Any] {
         [
             "name": "ask",
@@ -484,7 +516,7 @@ enum MCPTools {
         ]
     }
 
-    static func request(for name: String, args: [String: Any]) -> VisionRequest? {
+    static func request(for name: String, args: [String: Any]) throws -> VisionRequest? {
         switch name {
         case "ocr":
             return VisionRequest(
@@ -506,6 +538,14 @@ enum MCPTools {
                 visionTools: args["visionTools"] as? Bool,
                 page: int(args["page"]), scale: number(args["scale"]),
                 schema: jsonString(args["schema"]))
+        case "segment":
+            return VisionRequest(
+                op: "segment", path: args["path"] as? String, data: args["data"] as? String,
+                page: int(args["page"]), scale: number(args["scale"]),
+                outPath: args["outPath"] as? String,
+                point: numbers(args["point"]), box: numbers(args["box"]),
+                quality: args["quality"] as? String,
+                downloadAssets: try downloadConsent(args["downloadAssets"]))
         case "barcode":
             return VisionRequest(
                 op: "barcode", path: args["path"] as? String, data: args["data"] as? String,
@@ -551,13 +591,39 @@ enum MCPTools {
         }
     }
 
+    private static func downloadConsent(_ value: Any?) throws -> Bool? {
+        guard let value else { return nil }
+        // JSONSerialization bridges both booleans and numbers to NSNumber.
+        // Numeric 1 must not grant permission to download model assets.
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) == CFBooleanGetTypeID() else {
+            throw ServiceError(
+                name: "bad_request", reason: "invalid_download_assets",
+                hint: "downloadAssets must be a boolean; use true to explicitly download model assets",
+                exitCode: ExitCode.usage.rawValue)
+        }
+        return number.boolValue
+    }
+
     private static func number(_ v: Any?) -> Double? {
-        if let n = v as? NSNumber { return n.doubleValue }
+        if let n = v as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() {
+            return n.doubleValue
+        }
         return nil
     }
     private static func int(_ v: Any?) -> Int? {
         if let n = v as? NSNumber { return n.intValue }
         return nil
+    }
+    private static func numbers(_ v: Any?) -> [Double]? {
+        guard let v else { return nil }
+        guard let values = v as? [Any] else {
+            if let values = v as? [Double], values.allSatisfy(\.isFinite) { return values }
+            return [Double.nan]
+        }
+        let converted = values.compactMap(number)
+        return converted.count == values.count && converted.allSatisfy(\.isFinite)
+            ? converted : [Double.nan]
     }
     /// Re-serializes `ask`'s `schema` arg — a native `[String: Any]` JSON object per its
     /// declared `inputSchema` ("type": "object"), decoded by the stdio JSON-RPC layer —

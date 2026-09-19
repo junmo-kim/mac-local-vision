@@ -4,11 +4,12 @@ import Foundation
 /// entry point. Pure string logic, hosted next to HTTPParser so it can be unit
 /// tested without spinning up a listener. Typed conversion mirrors the MCP
 /// JSON-RPC arg surface: booleans from "true"/"false", numbers via Double,
-/// comma-split string arrays for the two array-valued keys.
+/// comma-split string arrays plus numeric point/box arrays.
 public enum QueryString {
     /// Keys whose values are arrays, always comma-split (a bare value becomes a
     /// one-element array so downstream `as? [String]` casts never silently drop it).
     static let arrayKeys: Set<String> = ["languages", "symbologies"]
+    static let numericArrayKeys: Set<String> = ["point", "box"]
 
     public static func parse(_ query: String?) -> [String: Any] {
         guard let query, !query.isEmpty else { return [:] }
@@ -27,6 +28,15 @@ public enum QueryString {
         if raw.isEmpty { return raw }
         if arrayKeys.contains(key) {
             return raw.split(separator: ",").map { String($0) }
+        }
+        if numericArrayKeys.contains(key) {
+            let pieces = raw.split(separator: ",", omittingEmptySubsequences: false)
+            let numbers = pieces.compactMap { Double($0) }
+            // Preserve "present but malformed" as a numeric-array sentinel so the
+            // segment validator reports invalid_seed instead of silently treating it
+            // as an omitted point/box.
+            return numbers.count == pieces.count && numbers.allSatisfy(\.isFinite)
+                ? numbers : [Double.nan]
         }
         if raw == "true" || raw == "false" { return raw == "true" }
         if let d = Double(raw) { return d }

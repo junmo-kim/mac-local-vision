@@ -152,12 +152,12 @@ enum HTTPServer {
         } else if !req.body.isEmpty {
             args["data"] = req.body.base64EncodedString()
         }
-        guard let visionReq = MCPTools.request(for: tool, args: args) else {
-            await sendHTTPResponse(conn, status: 404, body: Data("unknown tool: \(tool)".utf8), contentType: "text/plain")
-            return
-        }
         let fmt = OutputFormat(rawValue: (args["format"] as? String) ?? "yaml") ?? .yaml
         do {
+            guard let visionReq = try MCPTools.request(for: tool, args: args) else {
+                await sendHTTPResponse(conn, status: 404, body: Data("unknown tool: \(tool)".utf8), contentType: "text/plain")
+                return
+            }
             let result = try await VisionService.handle(visionReq)
             await sendHTTPResponse(conn, status: 200, body: Data(result.value.render(as: fmt).utf8),
                                    contentType: fmt == .json ? "application/json" : "text/yaml")

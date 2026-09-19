@@ -15,7 +15,7 @@ struct CLIHelpTests {
     @Test("every dispatchable command with flags has a usage string")
     func usageCoverage() {
         for cmd in ["ocr", "find", "barcode", "qr", "classify", "make-qr", "document-bounds", "rectify-document",
-                    "document-ocr", "ask", "sort-faces", "find-person", "doctor"] {
+                    "document-ocr", "ask", "segment", "sort-faces", "find-person", "doctor"] {
             let u = CLIHelp.usage(for: cmd)
             #expect(u != nil, "missing usage for \(cmd)")
             #expect(u?.contains("macvis \(cmd)") == true, "usage for \(cmd) should name the command")
@@ -36,5 +36,12 @@ struct CLIHelpTests {
         let usage = CLIHelp.usage(for: "ask")
         #expect(usage?.contains("--vision-tools") == true)
         #expect(usage?.contains("may add latency") == true)
+    }
+
+    @Test("segment help distinguishes mask dimensions from input pixel coordinates")
+    func segmentDimensionsHelp() {
+        let usage = CLIHelp.usage(for: "segment")
+        #expect(usage?.contains("mask resolution varies by quality") == true)
+        #expect(usage?.contains("image_width/image_height") == true)
     }
 }
