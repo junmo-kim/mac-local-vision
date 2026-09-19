@@ -1,11 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.5.0
 
-`ask` now ships in the canonical Xcode 27 build instead of a separate compile-flagged artifact.
-The same binary keeps all core commands available on macOS 26 and enables multimodal image input
-on macOS 27. CI launch-tests that canonical artifact on both OS generations, and releases no
-longer need a manual second upload.
+`macvis` now ships a single Xcode 27 build: core commands run on macOS 26, while multimodal `ask` and the new point/box `segment` command require macOS 27. Model errors include step-by-step recovery guidance, and `ask --vision-tools` optionally adds on-device OCR and barcode tools.
 
 ## v0.4.0
 

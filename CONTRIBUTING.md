@@ -13,11 +13,18 @@ ruby Tests/Integration/release-workflow-contract.rb
 Tests/Integration/release-binary-launch-smoke.sh .build/release/macvis
 # On a macOS 27 Mac with ask available:
 Tests/Integration/ask-golden-gate-eval.sh .build/release/macvis --vision-tools-ab --output /tmp/macvis-ask-eval.json
+# On a macOS 27 Mac with segmentation assets installed:
+swift test --filter SegmentationFixtureTests
+python3 Tests/Integration/segment-binary-live-smoke.py .build/release/macvis
 ```
 
 Use Xcode 27. The package keeps a macOS 26 deployment target, while its multimodal `ask` code is
 runtime-guarded for macOS 27. A clean compile says nothing about whether the binary actually
 launches, so run the release smoke test against every candidate binary.
+Before releasing segmentation changes, also run the live fixture and binary checks on macOS 27.
+They do not download assets and fail rather than skip when local inference is unavailable.
+If installation is needed, explicitly run `macvis segment <image> --point <x,y> --download-assets`
+with a point inside the object, then repeat the checks without that option.
 
 ## Pull requests
 
