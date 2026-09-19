@@ -21,6 +21,7 @@ public enum CLIHelp {
         "document-bounds": "usage: macvis document-bounds <image|pdf> [--min-confidence N] [--page N] [--scale S] [--format yaml|json]",
         "rectify-document": "usage: macvis rectify-document <image|pdf> [--out <path>] [--min-confidence N] [--page N] [--scale S] [--format yaml|json]",
         "ask": "usage: macvis ask <image|pdf> --prompt <text> [--stream] [--vision-tools] [--schema <path|json>] [--page N] [--scale S] [--format yaml|json]   (--vision-tools opts in to on-device OCR/barcode tools; may add latency; needs macOS 27)",
+        "segment": "usage: macvis segment <image|pdf> (--point x,y | --box x,y,width,height) [--quality accurate|balanced|fast] [--download-assets] [--out <path>] [--page N] [--scale S] [--format yaml|json]   (top-left pixel coordinates; needs macOS 27)",
         "sort-faces": "usage: macvis sort-faces <dir> [--output-dir DIR] [--threshold F] [--format yaml|json]",
         "find-person": "usage: macvis find-person --target <image> [--dir DIR] [--threshold F] [--format yaml|json]",
         "doctor": "usage: macvis doctor [--format yaml|json]",

@@ -6,6 +6,7 @@ final class QueryStringTests: XCTestCase {
         switch v {
         case let b as Bool: return "bool:\(b)"
         case let d as Double: return "num:\(d)"
+        case let a as [Double]: return "numarr:[\(a.map { String($0) }.joined(separator: ","))]"
         case let a as [String]: return "arr:[\(a.joined(separator: ","))]"
         case let s as String: return "str:\(s)"
         default: return "nil"
@@ -27,6 +28,16 @@ final class QueryStringTests: XCTestCase {
     func testMultiValueArraysSplitOnComma() {
         XCTAssertEqual(value("languages=ko-KR,en-US", "languages"), "arr:[ko-KR,en-US]")
         XCTAssertEqual(value("symbologies=qr,code128", "symbologies"), "arr:[qr,code128]")
+    }
+
+    func testSegmentationNumericArraysAreTyped() {
+        XCTAssertEqual(value("point=12.5,30", "point"), "numarr:[12.5,30.0]")
+        XCTAssertEqual(value("box=1,2,30,40", "box"), "numarr:[1.0,2.0,30.0,40.0]")
+    }
+
+    func testMalformedSegmentationArraysRemainPresentForValidation() {
+        XCTAssertEqual(value("point=nope", "point"), "numarr:[nan]")
+        XCTAssertEqual(value("box=1,2,nope,4", "box"), "numarr:[nan]")
     }
 
     func testPercentEncodedCommaSplitsAfterDecoding() {

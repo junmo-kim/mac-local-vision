@@ -12,6 +12,7 @@ enum VisionService {
         case "find":   return try await find(req)
         case "doctor": return ServiceResult(await doctor())
         case "ask":    return try await ask(req)
+        case "segment": return try await segment(req)
         case "ping":   return ServiceResult(.dict([("ok", .bool(true))]))
         case "barcode": return try await barcode(req)
         case "qr": return try await qr(req)
@@ -22,7 +23,7 @@ enum VisionService {
         case "classify": return try await classify(req)
         default:
             throw ServiceError(name: "bad_request", reason: "unknown_op", detail: req.op,
-                               hint: "ops: ocr | find | doctor | ask | barcode | qr | make-qr | document-bounds | rectify-document | document-ocr | classify",
+                               hint: "ops: ocr | find | doctor | ask | segment | barcode | qr | make-qr | document-bounds | rectify-document | document-ocr | classify",
                                exitCode: ExitCode.usage.rawValue)
         }
     }
@@ -381,6 +382,13 @@ enum VisionService {
         let documentStatus = status(await DocumentEngine.documentVisionAvailable())
         let documentOCRStatus = status(await DocumentOCREngine.documentOCRAvailable())
         let classifyStatus = status(await ClassifyEngine.classifyVisionAvailable())
+        let segmentStatus: YAMLValue
+        switch await SegmentationEngine.assetState() {
+        case .ready: segmentStatus = .string("available")
+        case .notReady, .downloading, .failed:
+            segmentStatus = .string("unavailable: assets_not_ready")
+        case .needsMacOS27: segmentStatus = .string("unavailable: needs_macos_27")
+        }
         let askStatus: YAMLValue
         let askReason: String?
         switch probeAskAvailability() {
@@ -400,6 +408,7 @@ enum VisionService {
             ("barcode", barcodeStatus), ("classify", classifyStatus),
             ("document_bounds", documentStatus),
             ("document_ocr", documentOCRStatus),
+            ("segment", segmentStatus),
             ("ask", askStatus), ("ocr_languages", .array(langs)),
             ("ask_languages", .array(askLangs)),
         ]
@@ -409,6 +418,97 @@ enum VisionService {
             fields.append(("ask_recovery", recovery.value()))
         }
         return .dict(fields)
+    }
+
+    // MARK: - segment
+
+    static func segment(_ req: VisionRequest) async throws -> ServiceResult {
+        var inputLabel = req.path ?? "<base64 data>"
+        do {
+            try SegmentationParameters.validateSeed(point: req.point, box: req.box)
+            _ = try SegmentationParameters.quality(req.quality)
+            let input = try InputSource.resolve(path: req.path, data: req.data)
+            inputLabel = input.label
+            let result: SegmentationResult?
+            switch input {
+            case .path(let path):
+                result = try await SegmentationEngine.segment(
+                    path: path, point: req.point, box: req.box, quality: req.quality,
+                    downloadAssets: req.downloadAssets ?? false,
+                    page: req.page ?? 1, scale: req.scale ?? 2.0)
+            case .data(let data):
+                result = try await SegmentationEngine.segment(
+                    data: data, point: req.point, box: req.box, quality: req.quality,
+                    downloadAssets: req.downloadAssets ?? false,
+                    page: req.page ?? 1, scale: req.scale ?? 2.0)
+            }
+            guard let result else {
+                return ServiceResult(.dict([("found", .bool(false))]))
+            }
+            var fields: [(String, YAMLValue)] = [("found", .bool(true))]
+            if let outPath = req.outPath, !outPath.isEmpty {
+                try SegmentationEngine.writePNG(result.png, to: outPath)
+                fields.append(("path", .string(outPath)))
+            } else {
+                fields.append(("image_data", .string(result.png.base64EncodedString())))
+            }
+            fields.append(("width", .int(result.width)))
+            fields.append(("height", .int(result.height)))
+            return ServiceResult(.dict(fields))
+        } catch let error as SegmentationParameterError {
+            switch error {
+            case .exactlyOneSeedRequired:
+                throw ServiceError(
+                    name: "bad_request", reason: "exactly_one_seed_required",
+                    hint: "provide exactly one of point=x,y or box=x,y,width,height",
+                    exitCode: ExitCode.usage.rawValue)
+            case .invalidSeed:
+                throw ServiceError(
+                    name: "bad_request", reason: "invalid_seed",
+                    hint: "use finite top-left pixel coordinates inside the input image",
+                    exitCode: ExitCode.usage.rawValue)
+            case .invalidQuality:
+                throw ServiceError(
+                    name: "bad_request", reason: "invalid_quality",
+                    hint: "quality must be accurate, balanced, or fast",
+                    exitCode: ExitCode.usage.rawValue)
+            }
+        } catch let error as SegmentationEngineError {
+            switch error {
+            case .needsMacOS27:
+                throw ServiceError(
+                    name: "segment_unavailable", reason: "needs_macos_27",
+                    hint: "run segment on macOS 27 or later",
+                    exitCode: ExitCode.askIneligible.rawValue)
+            case .assetsNotReady(let detail):
+                throw ServiceError(
+                    name: "segment_unavailable", reason: "assets_not_ready", detail: detail,
+                    hint: "retry with --download-assets to explicitly download the segmentation model, or retry later",
+                    exitCode: ExitCode.askTemporarilyUnavailable.rawValue)
+            case .assetDownloadFailed(let detail):
+                throw ServiceError(
+                    name: "segment_unavailable", reason: "asset_download_failed", detail: detail,
+                    hint: "check power and network connectivity, then retry --download-assets",
+                    exitCode: ExitCode.askTemporarilyUnavailable.rawValue)
+            case .outputWriteFailed(let path):
+                throw ServiceError(
+                    name: "segment_failed", reason: "output_write_failed", detail: path,
+                    hint: "check the destination directory exists and is writable",
+                    exitCode: ExitCode.runtimeError.rawValue)
+            case .maskEncodeFailed:
+                throw ServiceError(
+                    name: "segment_failed", reason: "mask_encode_failed",
+                    hint: "retry with a supported image or PDF input",
+                    exitCode: ExitCode.runtimeError.rawValue)
+            case .requestFailed(let detail):
+                throw ServiceError(
+                    name: "segment_failed", reason: "vision_request_failed", detail: detail,
+                    hint: "retry with a clearer seed point or box",
+                    exitCode: ExitCode.runtimeError.rawValue)
+            }
+        } catch let error as VisionError {
+            throw imageError(error, label: inputLabel)
+        }
     }
 
     // MARK: - ask

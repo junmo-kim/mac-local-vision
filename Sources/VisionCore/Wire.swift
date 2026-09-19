@@ -3,7 +3,7 @@ import Foundation
 /// The request contract shared by the CLI and the MCP server. A request fully
 /// describes one operation; optional fields default at the service layer.
 public struct VisionRequest: Codable, Sendable {
-    public var op: String              // ocr | find | doctor | ask | ping | barcode | qr | make-qr | document-bounds | rectify-document | document-ocr | classify
+    public var op: String              // ocr | find | doctor | ask | segment | ping | barcode | qr | make-qr | document-bounds | rectify-document | document-ocr | classify
     public var path: String?
     public var data: String?           // base64-encoded image/PDF — alternative to path for remote callers
     public var target: String?
@@ -32,6 +32,10 @@ public struct VisionRequest: Codable, Sendable {
     // the MCP server re-serializes its native JSON-object `schema` argument into this same
     // field, so VisionService.ask has a single mapping code path regardless of caller.
     public var schema: String?
+    public var point: [Double]?        // segment: top-left pixel x,y
+    public var box: [Double]?          // segment: top-left pixel x,y,width,height
+    public var quality: String?        // segment: accurate | balanced | fast
+    public var downloadAssets: Bool?   // segment: explicit model-asset download opt-in
 
     public init(op: String, path: String? = nil, data: String? = nil,
                 target: String? = nil, prompt: String? = nil,
@@ -41,7 +45,8 @@ public struct VisionRequest: Codable, Sendable {
                 page: Int? = nil, scale: Double? = nil, format: String? = nil,
                 symbologies: [String]? = nil, text: String? = nil, outPath: String? = nil,
                 correctionLevel: String? = nil, size: Int? = nil, top: Int? = nil,
-                schema: String? = nil) {
+                schema: String? = nil, point: [Double]? = nil, box: [Double]? = nil,
+                quality: String? = nil, downloadAssets: Bool? = nil) {
         self.op = op; self.path = path; self.data = data
         self.target = target; self.prompt = prompt
         self.fast = fast; self.words = words; self.boxes = boxes; self.stream = stream
@@ -53,6 +58,8 @@ public struct VisionRequest: Codable, Sendable {
         self.correctionLevel = correctionLevel; self.size = size
         self.top = top
         self.schema = schema
+        self.point = point; self.box = box
+        self.quality = quality; self.downloadAssets = downloadAssets
     }
 }
 

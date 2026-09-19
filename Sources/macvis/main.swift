@@ -20,6 +20,7 @@ func printUsage() {
       document-bounds <image|pdf> Find a document's 4 corners       [--min-confidence N] [--page N] [--scale S] [--format yaml|json]
       document-ocr <image|pdf>    Structured OCR (title/paragraphs/tables/lists) [--page N] [--scale S] [--format yaml|json]
       classify <image|pdf>        Tag an image (1,303-label taxonomy) [--min-confidence N (default 0.1)] [--top N (default 20)] [--page N] [--scale S] [--format yaml|json]
+      segment <image|pdf>         Segment an object from a point/box   (--point x,y | --box x,y,w,h) [--quality accurate|balanced|fast] [--download-assets] [--out PATH] [--format yaml|json] (macOS 27)
       sort-faces <dir>            Cluster photos by person          [--output-dir DIR] [--threshold F]
       find-person --target FACE   Index photos matching a face      [--dir DIR] [--threshold F]
 
@@ -31,7 +32,7 @@ func printUsage() {
       ask <image> --prompt P      On-device multimodal reasoning  [--stream] [--format yaml|json]
 
     AGENT INTERFACE:
-      mcp                         MCP server over stdio (JSON-RPC) — ocr/find/barcode/qr/classify/make-qr/document-bounds/rectify-document/document-ocr/doctor/ask tools
+      mcp                         MCP server over stdio (JSON-RPC) — ocr/find/barcode/qr/classify/segment/make-qr/document-bounds/rectify-document/document-ocr/doctor/ask tools
       serve [--host H] [--port N] HTTP MCP server for remote nodes — default 0.0.0.0:9090
 
     UTILITY:
@@ -65,6 +66,7 @@ func dispatch(_ args: [String]) async -> Int32 {
         case "rectify-document":       return try await RectifyDocumentCommand.run(rest)
         case "document-ocr":           return try await DocumentOCRCommand.run(rest)
         case "ask":                    return try await AskCommand.run(rest)
+        case "segment":                return try await SegmentCommand.run(rest)
         case "sort-faces", "find-person": return try await FacesCommand.run(sub, rest)
         case "doctor":                 return await DoctorCommand.run(rest)
         case "mcp":                    return await MCPCommand.run(rest)

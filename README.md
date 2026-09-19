@@ -105,8 +105,8 @@ swift build -c release && cp .build/release/macvis /usr/local/bin/
 
 ## Status
 
-Everything below runs on **Apple Silicon, macOS 26+** — except `make-qr` (any Mac) and `ask`
-(macOS 27 + Apple Intelligence on an eligible Apple Silicon Mac).
+Everything below runs on **Apple Silicon, macOS 26+** — except `make-qr` (any Mac), `segment`
+(macOS 27), and `ask` (macOS 27 + Apple Intelligence on an eligible Apple Silicon Mac).
 
 | Command | State |
 | --- | --- |
@@ -114,13 +114,14 @@ Everything below runs on **Apple Silicon, macOS 26+** — except `make-qr` (any 
 | `barcode` | ✅ working — QR + every Vision-supported 1D/2D symbology in one command |
 | `qr` | ✅ working — `barcode` restricted to QR only, server-side (no `--symbology` flag) |
 | `classify` | ✅ working — 1,303-label taxonomy; Vision scores every label, so `--min-confidence`/`--top` are applied by the engine, not just a pass-through filter (see note) |
+| `segment` | ✅ working — iterative point/box object segmentation on macOS 27; model asset download is explicit opt-in |
 | `make-qr` | ✅ working — CoreImage, no Vision needed; round-trips through `barcode`/`qr` |
 | `document-bounds` | ✅ working — finds a document's 4 corners (`VNDetectDocumentSegmentationRequest`) |
 | `rectify-document` | ✅ working — detects + perspective-corrects a photographed document into a flattened scan; round-trips through `ocr` |
 | `document-ocr` | ✅ working — structured OCR (title/paragraphs/tables/lists), nested alongside plain-text `ocr` |
 | `doctor` | ✅ working |
 | `sort-faces` / `find-person` | ✅ working — same-session grouping; cross-time identity is approximate (see note) |
-| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/qr/classify/make-qr/document-bounds/rectify-document/document-ocr/doctor/ask as tools |
+| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/qr/classify/segment/make-qr/document-bounds/rectify-document/document-ocr/doctor/ask as tools |
 | `serve` | ✅ working — HTTP JSON-RPC MCP server for remote/non-Mac nodes |
 | `ask` | ✅ working — on-device multimodal inference on macOS 27 with Apple Intelligence (see note) |
 
@@ -140,8 +141,8 @@ Everything below runs on **Apple Silicon, macOS 26+** — except `make-qr` (any 
 > **`ask` availability**: the call uses Apple Foundation Models multimodal input and runs entirely
 > on-device. It requires macOS 27 and an Apple Intelligence eligible Apple Silicon Mac. If Apple
 > Intelligence is disabled or its model is still downloading, `ask` returns a structured retryable
-> error instead of starting inference. The same binary keeps all other commands available on
-> macOS 26.
+> error instead of starting inference. The same binary keeps the existing macOS 26 Vision
+> commands available there; only `ask` and `segment` stay behind macOS 27 runtime gates.
 
 > **`ask --vision-tools`** opts in to Apple's on-device Vision `OCRTool` and
 > `BarcodeReaderTool` when exact text or barcode payloads matter. It is off by default, may add
@@ -149,6 +150,13 @@ Everything below runs on **Apple Silicon, macOS 26+** — except `make-qr` (any 
 > evidence and then runs Guided Generation in a separate on-device session; this avoids the
 > FoundationModels 2.0.68 tool/schema attachment-reference failure while preserving structured
 > output.
+
+> **`segment` assets and coordinates**: pass exactly one top-left pixel seed,
+> `--point x,y` or `--box x,y,width,height`. Quality defaults to `balanced`; choose
+> `accurate` or `fast` when appropriate. macvis never downloads the segmentation model as a
+> side effect of `doctor` or a normal call. If `doctor` reports `assets_not_ready`, retry once
+> with `--download-assets` to explicitly install it. Omit `--out` to receive the grayscale PNG
+> mask as base64 `image_data`.
 
 > **`ask --schema`** forces a structured JSON answer via Apple's Guided Generation
 > (`session.respond(to:schema:)`/`DynamicGenerationSchema`, available since the ordinary macOS 26
@@ -182,6 +190,8 @@ macvis find ./screen.png --target "결제하기"             # non-Latin works t
 macvis barcode ./ticket.png                              # scan every QR/barcode symbology
 macvis qr ./ticket.png                                   # scan for QR codes only
 macvis classify ./photo.jpg                              # tag against a 1,303-label taxonomy
+macvis segment ./photo.jpg --point 640,420 --out ./mask.png  # object mask from a top-left pixel seed (macOS 27)
+macvis segment ./photo.jpg --box 500,250,300,420 --quality accurate --download-assets  # explicit first-use asset install
 macvis make-qr "https://example.com" --out ./qr.png     # write a scannable QR PNG
 macvis document-bounds ./receipt.jpg                     # find a document's 4 corners
 macvis rectify-document ./receipt.jpg --out ./flat.png  # flatten a photographed document
@@ -402,6 +412,7 @@ barcode: available
 classify: available
 document_bounds: available
 document_ocr: available
+segment: "unavailable: assets_not_ready"
 ask: "unavailable: needs_macos_27_for_image_input"
 ocr_languages:
   - ko-KR
@@ -422,7 +433,7 @@ though: Apple's API doesn't expose one, so `ask` follows the prompt's language r
 Two equivalent integrations — both run the same `VisionService` engine, so the output is identical.
 
 **MCP server (stdio)** — `macvis mcp` speaks stdio JSON-RPC and exposes `ocr` / `find` / `barcode` /
-`qr` / `classify` / `make-qr` / `document-bounds` / `rectify-document` / `document-ocr` / `doctor` /
+`qr` / `classify` / `segment` / `make-qr` / `document-bounds` / `rectify-document` / `document-ocr` / `doctor` /
 `ask` as tools. On macOS 26, `ask` returns its structured availability error:
 
 ```json

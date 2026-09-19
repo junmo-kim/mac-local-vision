@@ -230,6 +230,28 @@ enum AskCommand {
     }
 }
 
+// MARK: - segment
+
+enum SegmentCommand {
+    static func run(_ args: [String]) async throws -> Int32 {
+        if CLIHelp.wantsHelp(args) { return helpExit("segment") }
+        let parsed = ArgParser.parse(args, booleanFlags: ["download-assets"])
+        let format = try resolveFormat(parsed)
+        guard let path = parsed.firstPositional else {
+            throw CLIError(message: CLIHelp.usage(for: "segment")!)
+        }
+        let req = VisionRequest(
+            op: "segment", path: path,
+            page: try optInt(parsed, "page"), scale: try optDouble(parsed, "scale"),
+            outPath: parsed.option("out"),
+            point: try optNumericList(parsed, "point"),
+            box: try optNumericList(parsed, "box"),
+            quality: parsed.option("quality"),
+            downloadAssets: parsed.flag("download-assets"))
+        return await runService(req, format: format)
+    }
+}
+
 /// `--schema` accepts either a path to a JSON Schema file or the schema inline as raw JSON
 /// text — a file that happens to exist wins (matches the plan's "path or inline" contract).
 /// The actual schema validation/mapping happens later, in `JSONSchemaMapper` (pure logic,

@@ -124,7 +124,7 @@ enum MCPServer {
 /// non-Sendable `[String: Any]` literals don't become shared mutable global state.
 enum MCPTools {
     static var all: [[String: Any]] {
-        [ocr, find, barcode, qr, classify, makeQR, documentBounds, rectifyDocument, documentOCR, doctor, ask]
+        [ocr, find, barcode, qr, classify, segment, makeQR, documentBounds, rectifyDocument, documentOCR, doctor, ask]
     }
 
     static var ocr: [String: Any] {
@@ -443,6 +443,35 @@ enum MCPTools {
         ]
     }
 
+    static var segment: [String: Any] {
+        [
+            "name": "segment",
+            "description": """
+            Segment one object from an image or PDF using a top-left pixel point or box. \
+            Runs locally with Vision on macOS 27. Provide exactly one seed. Model assets are \
+            never downloaded unless downloadAssets=true. Omit outPath to receive a grayscale \
+            PNG mask as base64 image_data.
+            """,
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "path": ["type": "string", "description": "Local image or PDF path. Required if data is absent."],
+                    "data": ["type": "string", "description": "Base64 image or PDF. Takes precedence over path."],
+                    "point": ["type": "array", "items": ["type": "number"], "minItems": 2, "maxItems": 2,
+                              "description": "Top-left pixel seed [x,y]. Use exactly one of point or box."],
+                    "box": ["type": "array", "items": ["type": "number"], "minItems": 4, "maxItems": 4,
+                            "description": "Top-left pixel seed [x,y,width,height]. Use exactly one of point or box."],
+                    "quality": ["type": "string", "enum": ["accurate", "balanced", "fast"], "description": "Default balanced."],
+                    "downloadAssets": ["type": "boolean", "description": "Explicitly download missing segmentation assets. Default false."],
+                    "outPath": ["type": "string", "description": "Local mask PNG destination. Omit for base64 image_data."],
+                    "page": ["type": "integer", "description": "PDF page, 1-based. Default 1."],
+                    "scale": ["type": "number", "description": "PDF rasterization scale. Default 2.0."],
+                    "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
+                ],
+            ],
+        ]
+    }
+
     static var ask: [String: Any] {
         [
             "name": "ask",
@@ -506,6 +535,14 @@ enum MCPTools {
                 visionTools: args["visionTools"] as? Bool,
                 page: int(args["page"]), scale: number(args["scale"]),
                 schema: jsonString(args["schema"]))
+        case "segment":
+            return VisionRequest(
+                op: "segment", path: args["path"] as? String, data: args["data"] as? String,
+                page: int(args["page"]), scale: number(args["scale"]),
+                outPath: args["outPath"] as? String,
+                point: numbers(args["point"]), box: numbers(args["box"]),
+                quality: args["quality"] as? String,
+                downloadAssets: args["downloadAssets"] as? Bool)
         case "barcode":
             return VisionRequest(
                 op: "barcode", path: args["path"] as? String, data: args["data"] as? String,
@@ -552,12 +589,24 @@ enum MCPTools {
     }
 
     private static func number(_ v: Any?) -> Double? {
-        if let n = v as? NSNumber { return n.doubleValue }
+        if let n = v as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() {
+            return n.doubleValue
+        }
         return nil
     }
     private static func int(_ v: Any?) -> Int? {
         if let n = v as? NSNumber { return n.intValue }
         return nil
+    }
+    private static func numbers(_ v: Any?) -> [Double]? {
+        guard let v else { return nil }
+        guard let values = v as? [Any] else {
+            if let values = v as? [Double], values.allSatisfy(\.isFinite) { return values }
+            return [Double.nan]
+        }
+        let converted = values.compactMap(number)
+        return converted.count == values.count && converted.allSatisfy(\.isFinite)
+            ? converted : [Double.nan]
     }
     /// Re-serializes `ask`'s `schema` arg — a native `[String: Any]` JSON object per its
     /// declared `inputSchema` ("type": "object"), decoded by the stdio JSON-RPC layer —
