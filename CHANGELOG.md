@@ -1,11 +1,28 @@
 # Changelog
 
-## Unreleased
+## v0.5.0
 
 `ask` now ships in the canonical Xcode 27 build instead of a separate compile-flagged artifact.
 The same binary keeps all core commands available on macOS 26 and enables multimodal image input
 on macOS 27. CI launch-tests that canonical artifact on both OS generations, and releases no
 longer need a manual second upload.
+
+Golden Gate FoundationModels failures now prefer typed errors and include additive, structured
+recovery steps. `doctor` keeps its existing `ask` status and adds the same recovery plan only when
+ask is unavailable. The guidance names the Mac language and asks users to verify that Siri uses
+the same language before checking model-download progress, without claiming that macvis can read
+Siri's private settings.
+
+`ask --vision-tools` opts in to Apple's on-device OCR and barcode tools for prompts that need
+exact text or payloads. The default path remains unchanged. Structured `--schema` requests gather
+tool evidence in a separate on-device session before Guided Generation, avoiding a Golden Gate
+tool/schema attachment-reference failure.
+
+The new macOS 27 `segment` command creates a grayscale object mask from exactly one top-left pixel
+point or box seed. It is available through CLI, MCP, and HTTP QUERY, supports accurate/balanced/fast
+quality levels, and returns either an output path or base64 PNG. Segmentation model assets are never
+downloaded implicitly; `--download-assets` (or `downloadAssets: true`) is required for first-use
+installation.
 
 ## v0.4.0
 

@@ -413,11 +413,14 @@ classify: available
 document_bounds: available
 document_ocr: available
 segment: "unavailable: assets_not_ready"
-ask: "unavailable: needs_macos_27_for_image_input"
+ask: available
 ocr_languages:
   - ko-KR
   - en-US
-ask_languages: []
+ask_languages:
+  - ko
+  - en
+  # ... abbreviated; actual output lists every currently supported language
 ```
 
 `ask_languages` mirrors `ask`'s own status — empty whenever `ask` itself is unavailable

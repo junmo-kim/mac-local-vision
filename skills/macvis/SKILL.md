@@ -4,7 +4,8 @@ description: >
   On-device, zero-token vision for AI agents (mac-local-vision, macOS). Read text from an
   image / screenshot / PDF (OCR), find the exact click-pixel of a word for E2E/UI assertions,
   scan QR codes and barcodes, tag/classify an image, group photos by face, flatten a
-  photographed document, extract a document's structured layout, or ask a question about an
+  photographed document, extract a document's structured layout, segment an object into a mask,
+  or ask a question about an
   image. Apple Vision + Foundation Models, fully on-device — no cloud, no vision tokens, ~0.3s
   per call. Reach for this whenever an agent needs to read or locate something in a
   screenshot/image instead of sending it to a cloud vision API, or needs to generate a QR code
@@ -14,7 +15,8 @@ description: >
   a QR code image, classify/tag an image, what's in this image, find a document's corners,
   flatten/straighten/scan a photographed document or receipt, perspective-correct an image,
   extract a table from an image, parse a document's structure, read a receipt/invoice layout,
-  on-device/local vision, sort photos by person. Apple Silicon + macOS 26+ (`ask` needs macOS 27).
+  segment an object, create an object mask from a point or box, on-device/local vision, sort
+  photos by person. Apple Silicon + macOS 26+ (`ask` and `segment` need macOS 27).
 user_invocable: true
 ---
 
@@ -36,6 +38,7 @@ user_invocable: true
 | Find a document's four corners in a photo | `macvis document-bounds <path>` |
 | Flatten/straighten a photographed document into a scan | `macvis rectify-document <path> --out <path>` |
 | Extract a document's title/paragraphs/tables/lists with layout preserved | `macvis document-ocr <path>` |
+| Create an object mask from one point or box — macOS 27 | `macvis segment <path> --point <x,y> --out <mask.png>` |
 | To *interpret* an image (describe, reason, summarize) — macOS 27 | `macvis ask <path> --prompt "<question>"` |
 | To extract structured JSON fields from an image (schema-constrained) — macOS 27 | `macvis ask <path> --prompt "<question>" --schema <path\|inline-json>` |
 | Group photos by person | `macvis sort-faces <dir>` |
@@ -61,6 +64,7 @@ macvis make-qr "https://example.com" --out ./qr.png  # write a scannable QR PNG
 macvis document-bounds ./receipt.jpg                  # find a document's 4 corners
 macvis rectify-document ./receipt.jpg --out ./flat.png # flatten a photographed document
 macvis document-ocr ./invoice.png                    # title/paragraphs/tables/lists, structured
+macvis segment ./photo.jpg --point 640,420 --out ./mask.png # top-left pixel seed → grayscale mask
 macvis ask ./receipt.png --prompt "extract the fields" --schema ./receipt-schema.json  # structured JSON answer
 macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photos by person
 ```
@@ -75,6 +79,9 @@ macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photo
   not word-tight.
 - Recognition languages auto-detect from the system locale; override with `--lang ko-KR,en-US`.
 - `find` filters at `--min-confidence 0.3` by default (`ocr` keeps everything); lower it for blurry/headless renders.
+- `segment` never downloads model assets implicitly. If it returns
+  `segment_unavailable/assets_not_ready`, use `--download-assets` only when the user explicitly
+  wants to install the assets, then retry without changing the point/box seed.
 
 `classify` scores an image against Vision's 1,303-label taxonomy (identifiers are
 unlocalized technical names, e.g. `outdoor`/`document`/`people` — not meant for direct UI
@@ -85,5 +92,5 @@ back; `label_count: 0` is a valid outcome (not an error), same as `barcode`'s `c
 Full flags for any command live in `macvis <command> --help` (the canonical, code-generated
 reference). To drive it as a tool server instead of the CLI, run `macvis mcp` — same engine,
 exposes `ocr` / `find` / `barcode` / `qr` / `classify` / `make-qr` / `document-bounds` /
-`rectify-document` / `document-ocr` / `doctor` / `ask` as MCP tools. On macOS 26, `ask`
-returns a structured availability error.
+`rectify-document` / `document-ocr` / `segment` / `doctor` / `ask` as MCP tools. On macOS 26,
+`ask` and `segment` return structured availability errors.
