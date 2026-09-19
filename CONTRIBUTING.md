@@ -11,6 +11,8 @@ swift build -c release
 swift test                   # must stay green
 ruby Tests/Integration/release-workflow-contract.rb
 Tests/Integration/release-binary-launch-smoke.sh .build/release/macvis
+# On a macOS 27 Mac with ask available:
+Tests/Integration/ask-golden-gate-eval.sh .build/release/macvis --vision-tools-ab --output /tmp/macvis-ask-eval.json
 ```
 
 Use Xcode 27. The package keeps a macOS 26 deployment target, while its multimodal `ask` code is

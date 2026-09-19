@@ -213,7 +213,7 @@ enum RectifyDocumentCommand {
 enum AskCommand {
     static func run(_ args: [String]) async throws -> Int32 {
         if CLIHelp.wantsHelp(args) { return helpExit("ask") }
-        let parsed = ArgParser.parse(args, booleanFlags: ["stream"])
+        let parsed = ArgParser.parse(args, booleanFlags: ["stream", "vision-tools"])
         let format = try resolveFormat(parsed)
         guard let path = parsed.firstPositional else {
             throw CLIError(message: CLIHelp.usage(for: "ask")!)
@@ -223,6 +223,7 @@ enum AskCommand {
         }
         let req = VisionRequest(op: "ask", path: path, prompt: prompt,
                                 stream: parsed.flag("stream"),
+                                visionTools: parsed.flag("vision-tools"),
                                 page: try optInt(parsed, "page"), scale: try optDouble(parsed, "scale"),
                                 schema: try resolveSchemaOption(parsed.option("schema")))
         return await runService(req, format: format)

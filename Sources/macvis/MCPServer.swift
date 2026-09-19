@@ -461,6 +461,10 @@ enum MCPTools {
                 "properties": [
                     "path": ["type": "string", "description": "Path to an image (png/jpg/heic/...) or a PDF."],
                     "prompt": ["type": "string", "description": "The question to ask about the image."],
+                    "visionTools": [
+                        "type": "boolean",
+                        "description": "Opt in to the on-device Vision OCR and barcode tools for precision reading. Default false; may add latency.",
+                    ],
                     "schema": [
                         "type": "object",
                         "description": """
@@ -499,6 +503,7 @@ enum MCPTools {
         case "ask":
             return VisionRequest(
                 op: "ask", path: args["path"] as? String, prompt: args["prompt"] as? String,
+                visionTools: args["visionTools"] as? Bool,
                 page: int(args["page"]), scale: number(args["scale"]),
                 schema: jsonString(args["schema"]))
         case "barcode":
