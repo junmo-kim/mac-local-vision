@@ -6,10 +6,8 @@ import VisionCore
 /// `JSONSchemaMapper.map` turns a user-supplied JSON Schema (MVP subset) into a
 /// FoundationModels `GenerationSchema`, entirely independent of the model/session APIs —
 /// see AFMEngine.ask's crash-defense doc comment. These tests never touch
-/// LanguageModelSession/Attachment, so they run under plain `swift test`, no
-/// MACVIS_ASK_IMAGE flag and no macOS 27 SDK needed (GenerationSchema/DynamicGenerationSchema
-/// are @available(macOS 26, *) — verified against the Xcode 26.4.1 SDK's
-/// FoundationModels.swiftinterface).
+/// LanguageModelSession/Attachment, so they run under plain `swift test`.
+/// GenerationSchema/DynamicGenerationSchema are available on macOS 26.
 // Deployment target is macOS 26 (Package.swift), so no extra #available guard needed here.
 @Suite("JSONSchemaMapper — MVP JSON Schema subset → GenerationSchema")
 struct JSONSchemaMapperTests {

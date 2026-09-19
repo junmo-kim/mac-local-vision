@@ -12,27 +12,33 @@ concurrency:
 
 jobs:
   build-test:
-    name: build + test (macOS 26 · core)
-    runs-on: macos-26
+    name: build + test (Xcode 27)
+    runs-on: xcode-27
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Select Xcode 26.6
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '26.6'
-
       - name: Versions
         run: swift --version && xcodebuild -version
 
-      - name: Build (release)
-        run: swift build -c release
+      - name: Build (release, stripped)
+        run: swift build -c release -Xlinker -s
 
       - name: Test
         run: swift test
+
+      - name: Release binary smoke test
+        run: Tests/Integration/release-binary-launch-smoke.sh .build/release/macvis
+
+      - name: Upload canonical release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: macvis-xcode-27
+          path: .build/release/macvis
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Release notes generator smoke test
         run: |
@@ -76,8 +82,22 @@ jobs:
           fi
           echo "ok: no networking APIs outside HTTPServer.swift"
 
-      # NOTE: the `ask` multimodal path (-D MACVIS_ASK_IMAGE) needs the macOS 27 SDK
-      # (Xcode 27 beta), which GitHub-hosted runners don't ship yet
-      # (actions/runner-images#14196). It is built and released manually until then —
-      # see scripts/release-ask.sh. When Xcode 27 lands on the runners, add a second
-      # job here: `swift build -c release -Xswiftc -DMACVIS_ASK_IMAGE`.
+
+  launch-macos-26:
+    name: launch canonical binary (macOS 26)
+    needs: build-test
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download canonical release binary
+        uses: actions/download-artifact@v4
+        with:
+          name: macvis-xcode-27
+          path: dist
+
+      - name: Smoke test on macOS 26
+        run: |
+          chmod +x dist/macvis
+          Tests/Integration/release-binary-launch-smoke.sh dist/macvis

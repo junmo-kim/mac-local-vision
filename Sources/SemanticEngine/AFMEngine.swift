@@ -18,10 +18,8 @@ import VisionCore  // shared image loader (page/scale/PDF/EXIF) — same contrac
 
 /// Real Apple Foundation Models backend.
 ///
-/// NOTE: multimodal image input (AFM 3 Core Advanced) requires the **macOS 27 SDK**
-/// and a macOS 27 + M3/M4 + 12GB runtime. Until this target is built against the 27
-/// SDK, `ask` returns a structured ineligibility error instead of compiling against
-/// APIs not present in the 26 SDK (impl §3 roadmap: ship Vision-only first).
+/// Multimodal image input requires macOS 27 and an Apple Intelligence eligible
+/// Apple Silicon Mac. The release binary still runs its non-`ask` commands on macOS 26.
 @available(macOS 26, *)
 public struct AFMEngine: SemanticEngine {
     public init() {}
@@ -29,23 +27,22 @@ public struct AFMEngine: SemanticEngine {
     public func ask(imagePath: String, prompt: String, stream: Bool,
                     page: Int, scale: Double, schema: GenerationSchema?) async throws -> AskOutcome {
         // Originally this let the framework's thrown error decide eligibility, without
-        // pre-judging from the availability probe. On macOS 27 Beta (26A5378j) that
+        // pre-judging from the availability probe. On an early macOS 27 build that
         // assumption doesn't hold: calling LanguageModelSession/Attachment while the model
         // isn't ready crashes the process (EXC_BAD_ACCESS/SIGSEGV inside FoundationModels'
         // XPC layer, verified via crash report) instead of throwing a catchable error. So we
         // gate on the probe (right before that call, below) and only let the framework
         // decide once it reports available.
-        #if MACVIS_ASK_IMAGE
-        // macOS 27 SDK build. Signatures verified against MacOSX27.0.sdk (Xcode 27 beta
-        // 27A5194q): `Attachment(<NSImage|CGImage>)` inside a `respond`/`streamResponse`
-        // @PromptBuilder closure; the result/chunk `.content` is the String answer.
+        // Signatures verified against MacOSX27.0.sdk: `Attachment(<NSImage|CGImage>)`
+        // inside a `respond`/`streamResponse` @PromptBuilder closure; the result/chunk
+        // `.content` is the String answer.
         // All thrown errors route through `mapCallError` so eligibility comes from the
         // framework, not a spec check.
         guard #available(macOS 27, *) else {
             throw SemanticError.ineligible(
-                reason: "needs_macos_27_runtime",
-                detail: "Built with multimodal support but running on macOS < 27.",
-                hint: "Run on macOS 27 + M3/M4 (12GB+).")
+                reason: "needs_macos_27_for_image_input",
+                detail: "Image input requires macOS 27.",
+                hint: "Run on macOS 27 on an Apple Intelligence eligible Apple Silicon Mac.")
         }
         // Shared loader → same page/scale/PDF/EXIF contract as ocr/find. `Attachment`
         // accepts a CGImage directly (verified against the 27 SDK).
@@ -76,7 +73,7 @@ public struct AFMEngine: SemanticEngine {
             // Build the `Prompt` value exactly once, then pass it (as a plain value, not a
             // @PromptBuilder trailing closure) into whichever `respond`/`streamResponse`
             // overload the schema/stream combination selects below. Real-hardware testing
-            // (macOS 27 Beta 26A5378j, 2026-07-14) found that repeating the inline
+            // (an early macOS 27 build, 2026-07-14) found that repeating the inline
             // `{ prompt; Attachment(image) }` builder closure across all four schema×stream
             // branches reliably SIGSEGVs (100% reproducible, crash always inside the
             // trailing-closure call — see the ask --schema plan's risk log). Building the
@@ -116,15 +113,6 @@ public struct AFMEngine: SemanticEngine {
         } catch {
             throw Self.mapCallError(error)
         }
-        #else
-        // The multimodal image API is absent from this SDK — a compile-time fact, the
-        // most authoritative signal there is (no spec guessing, no probe).
-        throw SemanticError.ineligible(
-            reason: "needs_macos_27_sdk",
-            detail: "This binary was built without multimodal image support (macOS 27 SDK required).",
-            hint: "Build on macOS 26.4+ with the Xcode 27 SDK and -D MACVIS_ASK_IMAGE, run on macOS 27."
-        )
-        #endif
     }
 
     /// Maps a pre-flight `probeAskAvailability()` result to the structured error `ask()`
@@ -140,12 +128,12 @@ public struct AFMEngine: SemanticEngine {
             return .ineligible(
                 reason: reason,
                 detail: "This Mac can't run ask on-device.",
-                hint: "ask needs an Apple-Intelligence-eligible Apple Silicon Mac on macOS 27 (Beta) — signed in, supported region, internal boot (eligibility is blocked on external-boot disks).")
+                hint: "ask needs an Apple Intelligence eligible Apple Silicon Mac on macOS 27, signed in, in a supported region, and booted from an internal disk.")
         case .osTooOld(let reason):
             return .ineligible(
                 reason: reason,
                 detail: "Image input requires macOS 27.",
-                hint: "Run on macOS 27 + M3/M4 (12GB+).")
+                hint: "Run on macOS 27 on an Apple Intelligence eligible Apple Silicon Mac.")
         case .notReady(let reason):
             return .temporarilyUnavailable(
                 reason: reason,
@@ -164,7 +152,6 @@ public struct AFMEngine: SemanticEngine {
     /// and any unrecognized error fall back to message keywords (`mapCallErrorByMessage`,
     /// locked by MapCallErrorTests).
     static func mapCallError(_ error: Error) -> SemanticError {
-        #if MACVIS_ASK_IMAGE
         if #available(macOS 27, *) {
             // On-device generation errors (the real macOS 27 enum). The Private Cloud Compute
             // backend is never instantiated (see `ask` — entitlement-gated), so its separate
@@ -211,12 +198,10 @@ public struct AFMEngine: SemanticEngine {
                 }
             }
         }
-        #endif
         return mapCallErrorByMessage(error)
     }
 
-    /// Message-keyword fallback: the only path on the macOS 26 build (the typed 27 enums
-    /// don't exist there) and the safety net for any error the typed switch didn't match.
+    /// Message-keyword fallback for errors outside the typed macOS 27 cases.
     /// Behavior is locked by `MapCallErrorTests`.
     static func mapCallErrorByMessage(_ error: Error) -> SemanticError {
         let m = String(describing: error).lowercased()
@@ -224,7 +209,7 @@ public struct AFMEngine: SemanticEngine {
             return .ineligible(
                 reason: "device_not_eligible",
                 detail: "This Mac can't run ask on-device.",
-                hint: "ask needs an Apple-Intelligence-eligible Apple Silicon Mac on macOS 27 (Beta) — signed in, supported region, internal boot (eligibility is blocked on external-boot disks).")
+                hint: "ask needs an Apple Intelligence eligible Apple Silicon Mac on macOS 27, signed in, in a supported region, and booted from an internal disk.")
         }
         if m.contains("not enabled") || m.contains("intelligence") {
             return .temporarilyUnavailable(
@@ -238,7 +223,7 @@ public struct AFMEngine: SemanticEngine {
                 detail: "The model is still downloading.",
                 hint: "Retry shortly.")
         }
-        // Observed in practice (2026-07-11, macOS 27 Beta 26A5378j): right after the main
+        // Observed in practice (2026-07-11, on an early macOS 27 build): right after the main
         // generation model finishes downloading, calls can still fail because a secondary
         // model — the guardrail/safety content sanitizer — hasn't finished loading yet.
         // Confirmed transient: an identical call moments later succeeded. Surfaces as a
@@ -262,8 +247,8 @@ public struct AFMEngine: SemanticEngine {
 
 /// Preflight availability — used by `doctor` to show what's likely possible, AND (via
 /// `AFMEngine.mapAvailabilityError`) as the pre-flight gate in `ask()` that avoids calling
-/// into FoundationModels while the model isn't ready — a real SIGSEGV on macOS 27 Beta
-/// (26A5378j), not just a thrown error; see `ask()`'s doc comment. Reads the system's
+/// into FoundationModels while the model isn't ready — a real SIGSEGV on an early macOS 27
+/// build, not just a thrown error; see `ask()`'s doc comment. Reads the system's
 /// reported availability, never device specs.
 public func probeAskAvailability() -> AskAvailability {
 #if canImport(FoundationModels)
@@ -299,16 +284,10 @@ public func probeAskAvailability() -> AskAvailability {
 /// whole when the primary language changes, not a per-language asset gate; see 2026-07-11
 /// per-language-download topic, corrected 2026-07-12.)
 ///
-/// Gated on both the `MACVIS_ASK_IMAGE` compile flag and `probeAskAvailability()` — exactly
-/// mirroring how `ask()` itself and `doctor`'s `askStatus` are gated (`probeAskAvailability()`
-/// alone only checks the runtime OS version, not whether *this binary* was built with image
-/// support, so skipping the compile-flag check would let a core build on real macOS 27
-/// hardware report non-empty `ask_languages` while `ask` itself still says
-/// `needs_macos_27_sdk`). So this never disagrees with `ask`'s own reported status: `[]`
-/// whenever `ask` would report unavailable, the full `supportedLanguages` set (~24) once
-/// `ask` is truly `available`. Used by `doctor` (`ask_languages`).
+/// Gated by `probeAskAvailability()`, exactly like `ask()` and `doctor`: `[]` whenever
+/// `ask` is unavailable, and the full `supportedLanguages` set once it is available.
+/// Used by `doctor` (`ask_languages`).
 public func readyAskLanguages() -> [String] {
-#if MACVIS_ASK_IMAGE
     guard case .available = probeAskAvailability() else { return [] }
 #if canImport(FoundationModels)
     if #available(macOS 26, *) {
@@ -316,7 +295,6 @@ public func readyAskLanguages() -> [String] {
             .map { $0.minimalIdentifier }
             .sorted()
     }
-#endif
 #endif
     return []
 }

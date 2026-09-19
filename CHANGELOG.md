@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+`ask` now ships in the canonical Xcode 27 build instead of a separate compile-flagged artifact.
+The same binary keeps all core commands available on macOS 26 and enables multimodal image input
+on macOS 27. CI launch-tests that canonical artifact on both OS generations, and releases no
+longer need a manual second upload.
+
 ## v0.4.0
 
 `macvis serve` gains a one-shot entry point for remote callers: send raw file bytes

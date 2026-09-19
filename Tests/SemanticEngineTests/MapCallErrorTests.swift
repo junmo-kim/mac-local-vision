@@ -64,8 +64,8 @@ struct MapCallErrorTests {
 }
 
 /// `mapAvailabilityError` is the pre-flight gate `ask()` consults before touching
-/// LanguageModelSession/Attachment — the fix for the SIGSEGV crash on macOS 27 Beta
-/// (26A5378j) when the model isn't ready. Pure function, no live FoundationModels state
+/// LanguageModelSession/Attachment — the fix for a SIGSEGV on an early macOS 27 build when
+/// the model isn't ready. Pure function, no live FoundationModels state
 /// needed, so lock its `AskAvailability` → `SemanticError`/nil mapping in directly.
 @Suite("AFMEngine.mapAvailabilityError — pre-flight gate mapping")
 struct MapAvailabilityErrorTests {

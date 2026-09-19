@@ -124,14 +124,7 @@ enum MCPServer {
 /// non-Sendable `[String: Any]` literals don't become shared mutable global state.
 enum MCPTools {
     static var all: [[String: Any]] {
-        // Capability-matched: only advertise `ask` when this binary was built with the
-        // macOS 27 multimodal path. `request(for:)` still maps a direct `ask` call on any
-        // build (→ structured needs_macos_27 error, not a bare "unknown tool").
-        var tools: [[String: Any]] = [ocr, find, barcode, qr, classify, makeQR, documentBounds, rectifyDocument, documentOCR, doctor]
-        #if MACVIS_ASK_IMAGE
-        tools.append(ask)
-        #endif
-        return tools
+        [ocr, find, barcode, qr, classify, makeQR, documentBounds, rectifyDocument, documentOCR, doctor, ask]
     }
 
     static var ocr: [String: Any] {
@@ -454,7 +447,7 @@ enum MCPTools {
         [
             "name": "ask",
             "description": """
-            Beta — ask a natural-language question ABOUT an image/screenshot/PDF and get a \
+            Ask a natural-language question ABOUT an image/screenshot/PDF and get a \
             reasoned answer, computed entirely on-device via Apple Foundation Models (no \
             cloud, no tokens). Needs macOS 27 + Apple Intelligence; on older systems it \
             returns a structured availability error (check `error`/`reason`). Use `ocr`/`find` \

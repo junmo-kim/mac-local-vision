@@ -15,7 +15,7 @@ No Node, no Python, no runtime dependencies: the OS *is* the dependency.
 - **Document rectification** — `rectify-document` finds a photographed document's boundary and flattens it into a straightened, top-down scan; `document-bounds` returns just the four corners.
 - **Structured document OCR** — `document-ocr` extracts title/paragraphs/tables/lists with layout preserved, not just flat lines of text.
 - **Image classification** — `classify` tags an image against a 1,303-label taxonomy (outdoor, document, people, ...).
-- **On-device semantic `ask`** *(Beta)* — multimodal reasoning via Apple Foundation Models (macOS 27 Beta).
+- **On-device semantic `ask`** — multimodal reasoning via Apple Foundation Models (macOS 27).
 - **Local face sorting** — cluster photos by person without uploading anything.
 
 ## Tiny & fast
@@ -34,7 +34,7 @@ process launch *plus* recognition, no daemon to keep warm:
 Versus shipping that screenshot to a cloud vision API: no network round-trip, no vision
 tokens, no per-call cost, and nothing leaves the machine.
 
-`ask` (multimodal LLM inference, needs macOS 27 (Beta) + Apple Intelligence) is a
+`ask` (multimodal LLM inference, needs macOS 27 + Apple Intelligence) is a
 different kind of fast — still no cloud round-trip, but the cost is real generation
 time, not process launch:
 
@@ -44,14 +44,14 @@ time, not process launch:
 | longer prompt, simple image | **3.0 s** |
 | complex real-world screenshot, detailed prompt | **6.8 s** |
 
-<sub>Small sample, MacMini-M4, macOS 27 Beta.</sub>
+<sub>Small sample, MacMini-M4, macOS 27.</sub>
 
 ## Requirements
 
-Apple Silicon Mac, macOS 26+. No other dependencies — `Vision` and `FoundationModels`
-ship with the OS. Building the `ask` (multimodal) path additionally needs an Xcode 27 beta
-whose FoundationModels SDK matches your macOS 27 runtime (see [Build & test](#build--test));
-everything else builds and runs on macOS 26.
+Apple Silicon Mac, macOS 26+. No runtime dependencies: `Vision` and `FoundationModels`
+ship with the OS. The single release binary runs Vision commands on macOS 26 and enables
+multimodal `ask` on macOS 27 when Apple Intelligence is available. Building from source
+requires Xcode 27.
 
 ## Install
 
@@ -95,7 +95,7 @@ xattr -d com.apple.quarantine /usr/local/bin/macvis   # or wherever you moved it
 (Homebrew / mise / `gh release download` / `curl` don't set quarantine, so this only affects a
 tarball downloaded straight from the Releases page in a browser.)
 
-**From source** (Swift 6.2+ toolchain / Xcode 26):
+**From source** (Xcode 27):
 
 ```bash
 swift build -c release && cp .build/release/macvis /usr/local/bin/
@@ -106,7 +106,7 @@ swift build -c release && cp .build/release/macvis /usr/local/bin/
 ## Status
 
 Everything below runs on **Apple Silicon, macOS 26+** — except `make-qr` (any Mac) and `ask`
-(macOS 27 Beta + Apple Intelligence).
+(macOS 27 + Apple Intelligence on an eligible Apple Silicon Mac).
 
 | Command | State |
 | --- | --- |
@@ -120,9 +120,9 @@ Everything below runs on **Apple Silicon, macOS 26+** — except `make-qr` (any 
 | `document-ocr` | ✅ working — structured OCR (title/paragraphs/tables/lists), nested alongside plain-text `ocr` |
 | `doctor` | ✅ working |
 | `sort-faces` / `find-person` | ✅ working — same-session grouping; cross-time identity is approximate (see note) |
-| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/qr/classify/make-qr/document-bounds/rectify-document/document-ocr/doctor as tools (+ask on macOS 27 builds) |
+| `mcp` | ✅ working — stdio JSON-RPC, exposes ocr/find/barcode/qr/classify/make-qr/document-bounds/rectify-document/document-ocr/doctor/ask as tools |
 | `serve` | ✅ working — HTTP JSON-RPC MCP server for remote/non-Mac nodes |
-| `ask` | 🟢 Beta — targets a pre-release Apple stack; real end-to-end inference verified on a macOS 27 Beta boot (see note) |
+| `ask` | ✅ working — on-device multimodal inference on macOS 27 with Apple Intelligence (see note) |
 
 > **`sort-faces` accuracy**: faces are grouped by an image feature print over the face
 > crop (Apple exposes no public face-embedding API). This reliably groups near-duplicate
@@ -137,15 +137,11 @@ Everything below runs on **Apple Silicon, macOS 26+** — except `make-qr` (any 
 > flat/synthetic (non-photographic) images tend to score everything near zero —
 > `label_count: 0` is a valid outcome (not an error), same as `barcode`'s `code_count: 0`.
 
-> **`ask` is Beta** because it rides on a pre-release Apple stack — macOS 27 (Beta) and the new
-> Foundation Models *multimodal* API. The call — `session.respond { prompt; Attachment(image) }` —
-> matches Apple's official [WWDC26 Foundation Models session](https://developer.apple.com/videos/play/wwdc2026/241/)
-> and builds against the macOS 27 SDK. On a real macOS 27 Beta boot, both the error path
-> (Apple Intelligence off → `apple_intelligence_not_enabled`, exit `71`) and real end-to-end
-> inference are verified: accurate answers, full `--stream` output (not deltas), and **~1-7 s**
-> latency depending on image complexity and answer length. Apple Intelligence itself is gated to
-> eligible, internal-boot installs, so `ask` tracks the platform: it graduates from Beta as macOS 27
-> ships. The rest of macvis (`ocr` / `find` / `sort-faces` / `mcp`) is stable on macOS 26 today.
+> **`ask` availability**: the call uses Apple Foundation Models multimodal input and runs entirely
+> on-device. It requires macOS 27 and an Apple Intelligence eligible Apple Silicon Mac. If Apple
+> Intelligence is disabled or its model is still downloading, `ask` returns a structured retryable
+> error instead of starting inference. The same binary keeps all other commands available on
+> macOS 26.
 
 > **`ask --schema`** forces a structured JSON answer via Apple's Guided Generation
 > (`session.respond(to:schema:)`/`DynamicGenerationSchema`, available since the ordinary macOS 26
@@ -164,17 +160,11 @@ Everything below runs on **Apple Silicon, macOS 26+** — except `make-qr` (any 
 ```bash
 swift build -c release       # binary at .build/release/macvis
 swift test                   # pure logic + ask plumbing + JSON Schema mapping + Vision OCR fixtures
+Tests/Integration/release-binary-launch-smoke.sh .build/release/macvis
 ```
 
-> Building the `ask` path against real macOS 27 APIs needs the Xcode 27 SDK; the
-> current target compiles on macOS 26 with `ask` behind `@available(macOS 27, *)`
-> + runtime availability guards.
->
-> ⚠️ FoundationModels is still beta, so Apple doesn't guarantee ABI stability across beta
-> builds. Build the `ask` binary with the Xcode 27 beta whose FoundationModels SDK **matches
-> your target macOS 27 runtime** — a mismatch (an older Xcode beta's FM vs a newer OS beta's
-> FM) can SIGSEGV inside a live model call. `scripts/release-ask.sh` warns on a detected
-> mismatch; this constraint goes away once FoundationModels reaches a stable ABI (GA).
+The canonical build uses the Xcode 27 SDK and a macOS 26 deployment target. Multimodal code is
+guarded by `@available(macOS 27, *)`, so one artifact covers both supported OS generations.
 
 ## Usage
 
@@ -189,7 +179,7 @@ macvis make-qr "https://example.com" --out ./qr.png     # write a scannable QR P
 macvis document-bounds ./receipt.jpg                     # find a document's 4 corners
 macvis rectify-document ./receipt.jpg --out ./flat.png  # flatten a photographed document
 macvis document-ocr ./invoice.png                        # title/paragraphs/tables/lists, structured
-macvis ask ./design.png --prompt "main theme color?"    # Beta — needs macOS 27 (Beta)
+macvis ask ./design.png --prompt "main theme color?"    # needs macOS 27 + Apple Intelligence
 macvis ask ./receipt.png --prompt "extract the fields" --schema ./receipt-schema.json  # structured JSON, Guided Generation
 macvis doctor                                           # which modes work here
 ```
@@ -404,7 +394,7 @@ barcode: available
 classify: available
 document_bounds: available
 document_ocr: available
-ask: "unavailable: needs_macos_27_sdk"
+ask: "unavailable: needs_macos_27_for_image_input"
 ocr_languages:
   - ko-KR
   - en-US
@@ -424,8 +414,8 @@ though: Apple's API doesn't expose one, so `ask` follows the prompt's language r
 Two equivalent integrations — both run the same `VisionService` engine, so the output is identical.
 
 **MCP server (stdio)** — `macvis mcp` speaks stdio JSON-RPC and exposes `ocr` / `find` / `barcode` /
-`qr` / `classify` / `make-qr` / `document-bounds` / `rectify-document` / `document-ocr` / `doctor`
-as tools (plus `ask` when the binary is built with the macOS 27 multimodal path):
+`qr` / `classify` / `make-qr` / `document-bounds` / `rectify-document` / `document-ocr` / `doctor` /
+`ask` as tools. On macOS 26, `ask` returns its structured availability error:
 
 ```json
 { "mcpServers": { "mac-vision": { "command": "/path/to/macvis", "args": ["mcp"] } } }

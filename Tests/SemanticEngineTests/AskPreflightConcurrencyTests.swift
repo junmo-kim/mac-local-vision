@@ -7,7 +7,7 @@ import os
 
 /// Concurrency regression for `ask`'s synchronous pre-flight calls — runnable without
 /// macOS 27 hardware, unlike the rest of `ask` (both APIs below are macOS 26+; only the
-/// multimodal `Attachment`/`Prompt` image path needs `MACVIS_ASK_IMAGE` + the macOS 27 SDK).
+/// multimodal `Attachment`/`Prompt` image path needs macOS 27).
 ///
 /// Background (ask-schema plan's concurrency-safety risk item, 2026-07-14): `AFMEngine.ask()`
 /// calls `probeAskAvailability()` (reads the plain synchronous `SystemLanguageModel.availability`
