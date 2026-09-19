@@ -53,6 +53,241 @@ public struct VisionRequest: Codable, Sendable {
     }
 }
 
+public struct RecoveryStep: Equatable, Sendable {
+    public let action: String
+    public let command: String?
+    public let expected: String
+
+    public init(action: String, command: String? = nil, expected: String) {
+        self.action = action
+        self.command = command
+        self.expected = expected
+    }
+
+    public func value() -> YAMLValue {
+        var fields: [(String, YAMLValue)] = [
+            ("action", .string(action)),
+        ]
+        if let command { fields.append(("command", .string(command))) }
+        fields.append(("expected", .string(expected)))
+        return .dict(fields)
+    }
+}
+
+public struct RecoveryVerification: Equatable, Sendable {
+    public let command: String
+    public let success: String
+
+    public init(command: String, success: String) {
+        self.command = command
+        self.success = success
+    }
+
+    public func value() -> YAMLValue {
+        .dict([
+            ("command", .string(command)),
+            ("success", .string(success)),
+        ])
+    }
+}
+
+public struct RecoveryFallback: Equatable, Sendable {
+    public let action: String
+    public let commands: [String]
+
+    public init(action: String, commands: [String]) {
+        self.action = action
+        self.commands = commands
+    }
+
+    public func value() -> YAMLValue {
+        .dict([
+            ("action", .string(action)),
+            ("commands", .array(commands.map(YAMLValue.string))),
+        ])
+    }
+}
+
+public struct RecoveryPlan: Equatable, Sendable {
+    public let status: String
+    public let steps: [RecoveryStep]
+    public let verify: RecoveryVerification
+    public let ifUnresolved: RecoveryFallback
+
+    public init(status: String, steps: [RecoveryStep], verify: RecoveryVerification,
+                ifUnresolved: RecoveryFallback) {
+        self.status = status
+        self.steps = steps
+        self.verify = verify
+        self.ifUnresolved = ifUnresolved
+    }
+
+    public func value() -> YAMLValue {
+        .dict([
+            ("status", .string(status)),
+            ("steps", .array(steps.map { $0.value() })),
+            ("verify", verify.value()),
+            ("if_unresolved", ifUnresolved.value()),
+        ])
+    }
+}
+
+public enum AskRecoveryPlan {
+    public static func macLanguage(
+        preferredIdentifier: String? = Locale.preferredLanguages.first,
+        displayLocale: Locale = .current
+    ) -> (identifier: String, displayName: String) {
+        let rawIdentifier = preferredIdentifier ?? "und"
+        let identifier = Locale(identifier: rawIdentifier).identifier(.bcp47)
+        let displayName = displayLocale.localizedString(forIdentifier: identifier) ?? identifier
+        return (identifier, displayName)
+    }
+
+    public static func plan(
+        for reason: String,
+        macLanguage: (identifier: String, displayName: String)
+    ) -> RecoveryPlan? {
+        let doctorVerification = RecoveryVerification(
+            command: "macvis doctor --format json",
+            success: "ask == \"available\"")
+        let diagnosticFallback = RecoveryFallback(
+            action: "Retry later, then collect version and doctor output for diagnosis.",
+            commands: ["sw_vers", "macvis --version", "macvis doctor --format json"])
+        let doctorStep = RecoveryStep(
+            action: "Run macvis doctor again.",
+            command: "macvis doctor --format json",
+            expected: "The ask status changes to available.")
+
+        switch reason {
+        case "apple_intelligence_not_enabled":
+            return RecoveryPlan(
+                status: "Apple Intelligence is not enabled.",
+                steps: [
+                    RecoveryStep(
+                        action: "Enable Apple Intelligence in System Settings.",
+                        expected: "Apple Intelligence remains enabled after setup completes."),
+                    RecoveryStep(
+                        action: "Wait for the on-device model to become ready.",
+                        expected: "System Settings no longer shows model preparation in progress."),
+                    doctorStep,
+                ],
+                verify: doctorVerification,
+                ifUnresolved: diagnosticFallback)
+
+        case "model_not_ready":
+            return RecoveryPlan(
+                status: "The on-device language model is not ready yet.",
+                steps: [
+                    RecoveryStep(
+                        action: "The current Mac language is \(macLanguage.displayName) (\(macLanguage.identifier)). In System Settings, set the Siri language to match it.",
+                        expected: "The Mac and Siri language selections match."),
+                    RecoveryStep(
+                        action: "Check the download progress at the top of the Apple Intelligence settings page.",
+                        expected: "A download percentage appears and continues toward completion."),
+                    RecoveryStep(
+                        action: "Keep the Mac connected to power and a stable network while the download finishes.",
+                        expected: "The model download completes without being interrupted."),
+                    doctorStep,
+                ],
+                verify: doctorVerification,
+                ifUnresolved: diagnosticFallback)
+
+        case "device_not_eligible":
+            return RecoveryPlan(
+                status: "This Mac is not eligible to run ask on-device.",
+                steps: [
+                    RecoveryStep(
+                        action: "Run ask on an Apple Intelligence eligible Apple Silicon Mac.",
+                        expected: "The eligible Mac is signed in, uses a supported region, and boots from its internal disk."),
+                    doctorStep,
+                ],
+                verify: doctorVerification,
+                ifUnresolved: diagnosticFallback)
+
+        case "needs_macos_27_for_image_input":
+            return RecoveryPlan(
+                status: "Image input for ask requires macOS 27 or later.",
+                steps: [
+                    RecoveryStep(
+                        action: "Update this Mac to macOS 27 or later.",
+                        expected: "sw_vers reports macOS 27 or later."),
+                    doctorStep,
+                ],
+                verify: doctorVerification,
+                ifUnresolved: diagnosticFallback)
+
+        case "model_assets_unavailable":
+            return RecoveryPlan(
+                status: "The on-device model assets are not available yet.",
+                steps: [
+                    RecoveryStep(
+                        action: "Wait for the Apple Intelligence model download to finish.",
+                        expected: "System Settings no longer shows an active model download."),
+                    RecoveryStep(
+                        action: "Keep the Mac connected to power and a stable network, then retry.",
+                        expected: "The model assets remain available for the next request."),
+                ],
+                verify: doctorVerification,
+                ifUnresolved: diagnosticFallback)
+
+        case "session_busy":
+            return RecoveryPlan(
+                status: "Another request is already using this language model session.",
+                steps: [
+                    RecoveryStep(
+                        action: "Wait for the in-flight ask request to finish before retrying.",
+                        expected: "Only one request is using the session."),
+                ],
+                verify: RecoveryVerification(
+                    command: "Retry the original macvis ask command.",
+                    success: "The command exits 0 and returns an answer."),
+                ifUnresolved: diagnosticFallback)
+
+        case "content_safety_model_not_ready":
+            return RecoveryPlan(
+                status: "A secondary safety model is still initializing.",
+                steps: [
+                    RecoveryStep(
+                        action: "Wait briefly after the main model download completes, then retry.",
+                        expected: "The secondary model finishes initializing."),
+                ],
+                verify: RecoveryVerification(
+                    command: "Retry the original macvis ask command.",
+                    success: "The command exits 0 and returns an answer."),
+                ifUnresolved: diagnosticFallback)
+
+        case "rate_limited":
+            return RecoveryPlan(
+                status: "The on-device model temporarily rate limited this session.",
+                steps: [
+                    RecoveryStep(
+                        action: "Wait briefly before retrying the request.",
+                        expected: "The temporary request limit clears."),
+                ],
+                verify: RecoveryVerification(
+                    command: "Retry the original macvis ask command.",
+                    success: "The command exits 0 and returns an answer."),
+                ifUnresolved: diagnosticFallback)
+
+        case "timeout":
+            return RecoveryPlan(
+                status: "The model did not respond before the request timed out.",
+                steps: [
+                    RecoveryStep(
+                        action: "Retry with a smaller image or a shorter prompt.",
+                        expected: "The request completes within the timeout."),
+                ],
+                verify: RecoveryVerification(
+                    command: "Retry the adjusted macvis ask command.",
+                    success: "The command exits 0 and returns an answer."),
+                ifUnresolved: diagnosticFallback)
+
+        default:
+            return nil
+        }
+    }
+}
+
 /// A structured, self-correcting error (cli-api §4): every failure carries a stable
 /// `name`, a machine `reason`, and an actionable `hint` so an agent knows what to do
 /// next, plus an `exitCode` distinguishing permanent (70) from retryable (71).
@@ -61,12 +296,13 @@ public struct ServiceError: Error, Sendable {
     public let reason: String?
     public let detail: String?
     public let hint: String?
+    public let recovery: RecoveryPlan?
     public let exitCode: Int32
 
     public init(name: String, reason: String? = nil, detail: String? = nil,
-                hint: String? = nil, exitCode: Int32) {
+                hint: String? = nil, recovery: RecoveryPlan? = nil, exitCode: Int32) {
         self.name = name; self.reason = reason; self.detail = detail
-        self.hint = hint; self.exitCode = exitCode
+        self.hint = hint; self.recovery = recovery; self.exitCode = exitCode
     }
 
     /// Renderable error envelope (stderr / wire / MCP).
@@ -75,6 +311,7 @@ public struct ServiceError: Error, Sendable {
         if let reason { fields.append(("reason", .string(reason))) }
         if let detail { fields.append(("detail", .string(detail))) }
         if let hint { fields.append(("hint", .string(hint))) }
+        if let recovery { fields.append(("recovery", recovery.value())) }
         return .dict(fields)
     }
 }

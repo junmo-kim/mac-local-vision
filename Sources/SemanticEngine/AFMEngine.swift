@@ -153,6 +153,33 @@ public struct AFMEngine: SemanticEngine {
     /// locked by MapCallErrorTests).
     static func mapCallError(_ error: Error) -> SemanticError {
         if #available(macOS 27, *) {
+            if let e = error as? SystemLanguageModel.Error {
+                switch e {
+                case .assetsUnavailable:
+                    return .temporarilyUnavailable(
+                        reason: "model_assets_unavailable",
+                        detail: String(describing: error),
+                        hint: "Wait for the model download to finish, then retry.")
+                @unknown default:
+                    break
+                }
+            }
+            if let e = error as? LanguageModelSession.Error {
+                switch e {
+                case .concurrentRequests:
+                    return .temporarilyUnavailable(
+                        reason: "session_busy",
+                        detail: "Another request is already using this language model session.",
+                        hint: "Wait for the current request to finish, then retry.")
+                case .transcriptMutationWhileResponding:
+                    return .failed(
+                        reason: "session_mutation_while_responding",
+                        detail: "The session transcript was changed while a response was in progress.",
+                        hint: "Do not mutate a session transcript while it is responding.")
+                @unknown default:
+                    break
+                }
+            }
             // On-device generation errors (the real macOS 27 enum). The Private Cloud Compute
             // backend is never instantiated (see `ask` — entitlement-gated), so its separate
             // error type isn't handled here.
@@ -211,6 +238,13 @@ public struct AFMEngine: SemanticEngine {
                 detail: "This Mac can't run ask on-device.",
                 hint: "ask needs an Apple Intelligence eligible Apple Silicon Mac on macOS 27, signed in, in a supported region, and booted from an internal disk.")
         }
+        if m.contains("assets unavailable") ||
+            (m.contains("asset") && m.contains("unavailable")) {
+            return .temporarilyUnavailable(
+                reason: "model_assets_unavailable",
+                detail: String(describing: error),
+                hint: "Wait for the model download to finish, then retry.")
+        }
         if m.contains("not enabled") || m.contains("intelligence") {
             return .temporarilyUnavailable(
                 reason: "apple_intelligence_not_enabled",
@@ -250,28 +284,42 @@ public struct AFMEngine: SemanticEngine {
 /// into FoundationModels while the model isn't ready — a real SIGSEGV on an early macOS 27
 /// build, not just a thrown error; see `ask()`'s doc comment. Reads the system's
 /// reported availability, never device specs.
+func resolveAskAvailability(
+    supportsImageInput: Bool,
+    readModelAvailability: () -> AskAvailability
+) -> AskAvailability {
+    guard supportsImageInput else {
+        return .osTooOld(reason: "needs_macos_27_for_image_input")
+    }
+    return readModelAvailability()
+}
+
 public func probeAskAvailability() -> AskAvailability {
 #if canImport(FoundationModels)
-    if #available(macOS 26, *) {
-        switch SystemLanguageModel.default.availability {
-        case .available:
-            // Base AFM may be present on 26, but image input needs macOS 27.
-            if #available(macOS 27, *) { return .available }
-            return .osTooOld(reason: "needs_macos_27_for_image_input")
-        case .unavailable(.deviceNotEligible):
-            return .ineligible(reason: "device_not_eligible")
-        case .unavailable(.appleIntelligenceNotEnabled):
-            return .notReady(reason: "apple_intelligence_not_enabled")
-        case .unavailable(.modelNotReady):
-            return .notReady(reason: "model_not_ready")
-        case .unavailable:
-            return .ineligible(reason: "unavailable")
-        @unknown default:
-            return .ineligible(reason: "unknown")
+    if #available(macOS 27, *) {
+        return resolveAskAvailability(supportsImageInput: true) {
+            switch SystemLanguageModel.default.availability {
+            case .available:
+                return .available
+            case .unavailable(.deviceNotEligible):
+                return .ineligible(reason: "device_not_eligible")
+            case .unavailable(.appleIntelligenceNotEnabled):
+                return .notReady(reason: "apple_intelligence_not_enabled")
+            case .unavailable(.modelNotReady):
+                return .notReady(reason: "model_not_ready")
+            case .unavailable:
+                return .ineligible(reason: "unavailable")
+            @unknown default:
+                return .ineligible(reason: "unknown")
+            }
         }
     }
-#endif
+    return resolveAskAvailability(supportsImageInput: false) {
+        .osTooOld(reason: "foundation_models_unavailable")
+    }
+#else
     return .osTooOld(reason: "foundation_models_unavailable")
+#endif
 }
 
 /// Languages the on-device model can actually respond in *right now*. Verified empirically

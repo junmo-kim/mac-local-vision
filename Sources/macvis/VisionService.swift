@@ -382,22 +382,33 @@ enum VisionService {
         let documentOCRStatus = status(await DocumentOCREngine.documentOCRAvailable())
         let classifyStatus = status(await ClassifyEngine.classifyVisionAvailable())
         let askStatus: YAMLValue
+        let askReason: String?
         switch probeAskAvailability() {
-        case .available: askStatus = .string("available")
-        case .ineligible(let r), .osTooOld(let r), .notReady(let r): askStatus = .string("unavailable: \(r)")
+        case .available:
+            askStatus = .string("available")
+            askReason = nil
+        case .ineligible(let reason), .osTooOld(let reason), .notReady(let reason):
+            askStatus = .string("unavailable: \(reason)")
+            askReason = reason
         }
         let langs = OCREngine.systemDefaultLanguages().map { YAMLValue.string($0) }
         // Readiness, not capability — empty unless the model is available *now*; when it is,
         // this is what it can currently handle across the languages it supports.
         let askLangs = readyAskLanguages().map { YAMLValue.string($0) }
-        return .dict([
+        var fields: [(String, YAMLValue)] = [
             ("ocr", text), ("find", text), ("sort-faces", face),
             ("barcode", barcodeStatus), ("classify", classifyStatus),
             ("document_bounds", documentStatus),
             ("document_ocr", documentOCRStatus),
             ("ask", askStatus), ("ocr_languages", .array(langs)),
             ("ask_languages", .array(askLangs)),
-        ])
+        ]
+        if let askReason,
+           let recovery = AskRecoveryPlan.plan(
+               for: askReason, macLanguage: AskRecoveryPlan.macLanguage()) {
+            fields.append(("ask_recovery", recovery.value()))
+        }
+        return .dict(fields)
     }
 
     // MARK: - ask
@@ -477,12 +488,15 @@ enum VisionService {
     }
 
     private static func semanticToService(_ e: SemanticError) -> ServiceError {
+        let macLanguage = AskRecoveryPlan.macLanguage()
         switch e {
         case .ineligible(let reason, let detail, let hint):
             return ServiceError(name: "ask_unavailable", reason: reason, detail: detail, hint: hint,
+                                recovery: AskRecoveryPlan.plan(for: reason, macLanguage: macLanguage),
                                 exitCode: ExitCode.askIneligible.rawValue)
         case .temporarilyUnavailable(let reason, let detail, let hint):
             return ServiceError(name: "ask_unavailable", reason: reason, detail: detail, hint: hint,
+                                recovery: AskRecoveryPlan.plan(for: reason, macLanguage: macLanguage),
                                 exitCode: ExitCode.askTemporarilyUnavailable.rawValue)
         case .failed(let reason, let detail, let hint):
             return ServiceError(name: "ask_failed", reason: reason, detail: detail, hint: hint,
