@@ -1,6 +1,7 @@
 #if canImport(FoundationModels)
 import Testing
 import Foundation
+import FoundationModels
 @testable import SemanticEngine
 
 /// `mapCallError` decides the exit-code class (70/71/1) from whatever the framework throws.
@@ -31,10 +32,52 @@ struct MapCallErrorTests {
 
     @Test("model still downloading → temporarilyUnavailable (exit 71 class)")
     func modelNotReady() {
-        guard case .temporarilyUnavailable(let reason, _, _) =
+        guard case .temporarilyUnavailable(let reason, let detail, _) =
             AFMEngine.mapCallError(error("the model is not ready, still downloading"))
         else { Issue.record("expected .temporarilyUnavailable"); return }
         #expect(reason == "model_not_ready")
+        #expect(detail == "The on-device model is not ready yet.")
+    }
+
+    @Test("localized assets unavailable message → temporarilyUnavailable (exit 71 class)")
+    func modelAssetsUnavailableMessage() {
+        guard case .temporarilyUnavailable(let reason, _, let hint) =
+            AFMEngine.mapCallError(error("Language model assets are unavailable."))
+        else { Issue.record("expected .temporarilyUnavailable"); return }
+        #expect(reason == "model_assets_unavailable")
+        #expect(hint.contains("Apple Intelligence"))
+        #expect(hint.contains("doctor"))
+    }
+
+    @available(macOS 27, *)
+    @Test("SystemLanguageModel assets unavailable → temporarilyUnavailable (exit 71 class)")
+    func modelAssetsUnavailableTyped() {
+        let unavailable = SystemLanguageModel.Error.assetsUnavailable(
+            .init(debugDescription: "test assets are unavailable"))
+        guard case .temporarilyUnavailable(let reason, _, let hint) =
+            AFMEngine.mapCallError(unavailable)
+        else { Issue.record("expected .temporarilyUnavailable"); return }
+        #expect(reason == "model_assets_unavailable")
+        #expect(hint.contains("Apple Intelligence"))
+        #expect(hint.contains("doctor"))
+    }
+
+    @available(macOS 27, *)
+    @Test("LanguageModelSession concurrent request → temporarilyUnavailable (exit 71 class)")
+    func concurrentRequests() {
+        guard case .temporarilyUnavailable(let reason, _, _) =
+            AFMEngine.mapCallError(LanguageModelSession.Error.concurrentRequests)
+        else { Issue.record("expected .temporarilyUnavailable"); return }
+        #expect(reason == "session_busy")
+    }
+
+    @available(macOS 27, *)
+    @Test("LanguageModelSession transcript mutation → failed (exit 1 class)")
+    func transcriptMutationWhileResponding() {
+        guard case .failed(let reason, _, _) =
+            AFMEngine.mapCallError(LanguageModelSession.Error.transcriptMutationWhileResponding)
+        else { Issue.record("expected .failed"); return }
+        #expect(reason == "session_mutation_while_responding")
     }
 
     @Test("safety model still loading → temporarilyUnavailable (exit 71 class)")
@@ -69,6 +112,20 @@ struct MapCallErrorTests {
 /// needed, so lock its `AskAvailability` → `SemanticError`/nil mapping in directly.
 @Suite("AFMEngine.mapAvailabilityError — pre-flight gate mapping")
 struct MapAvailabilityErrorTests {
+    @Test("older macOS returns the image-input OS gate without probing the model")
+    func oldOSSkipsModelProbe() {
+        var probedModel = false
+        let availability = resolveAskAvailability(
+            supportsImageInput: false,
+            readModelAvailability: {
+                probedModel = true
+                return .available
+            })
+
+        #expect(availability == .osTooOld(reason: "needs_macos_27_for_image_input"))
+        #expect(!probedModel)
+    }
+
     @Test(".available → nil (safe to proceed)")
     func available() {
         #expect(AFMEngine.mapAvailabilityError(.available) == nil)
@@ -100,12 +157,12 @@ struct MapAvailabilityErrorTests {
     }
 
     @Test(".notReady(model_not_ready) → temporarilyUnavailable (exit 71 class)")
-    func notReadyModelDownloading() {
+    func notReadyModel() {
         guard case .temporarilyUnavailable(let reason, let detail, _) =
             AFMEngine.mapAvailabilityError(.notReady(reason: "model_not_ready"))
         else { Issue.record("expected .temporarilyUnavailable"); return }
         #expect(reason == "model_not_ready")
-        #expect(detail == "The model is still downloading.")
+        #expect(detail == "The on-device model is not ready yet.")
     }
 }
 #endif
