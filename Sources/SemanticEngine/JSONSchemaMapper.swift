@@ -8,15 +8,15 @@ import FoundationModels
 /// for `AFMEngine.ask(schema:)` Guided Generation. Pure logic — imports only
 /// Foundation/FoundationModels' *schema* types, never touches LanguageModelSession or
 /// Attachment, so a malformed/unsupported schema is rejected before any model call is
-/// attempted. That separation is deliberate: the SIGSEGV crash fixed on macOS 27 Beta
-/// (26A5378j — see AFMEngine.ask's doc comment) happened *inside* a live model call, so
+/// attempted. That separation is deliberate: the SIGSEGV crash fixed on an early macOS 27
+/// build (see AFMEngine.ask's doc comment) happened *inside* a live model call, so
 /// keeping schema validation fully upstream of `probeAskAvailability()`/session creation
 /// means a bad `--schema` can never be the thing that reaches that crash-prone code path.
 ///
 /// `GenerationSchema`/`DynamicGenerationSchema` are `@available(macOS 26, *)` — present in
 /// the ordinary macOS 26 SDK (verified against Xcode 26.4.1's FoundationModels.swiftinterface),
-/// independent of the macOS-27-only multimodal image API and the `MACVIS_ASK_IMAGE` compile
-/// flag. So this mapper (and its tests) build and run under plain `swift build`/`swift test`.
+/// independent of the macOS-27-only multimodal image API. So this mapper and its tests build
+/// and run under plain `swift build`/`swift test`.
 ///
 /// Supported subset: object (named properties) / string (+ `enum`) / integer / number /
 /// boolean / array (single-schema `items`) / `required`. Deliberately unsupported — reported

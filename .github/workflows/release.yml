@@ -5,37 +5,90 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release-core:
-    name: build + attach core binary (macOS 26)
-    runs-on: macos-26
+  build:
+    name: build canonical release candidate (Xcode 27)
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Select Xcode 26.6
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '26.6'
+      - name: Versions
+        run: swift --version && xcodebuild -version
+
+      - name: Test
+        run: swift test
+
+      - name: Release workflow contract
+        run: ruby Tests/Integration/release-workflow-contract.rb
 
       - name: Build (release, stripped) + package
         run: |
           swift build -c release -Xlinker -s
           BIN=.build/release/macvis
+          codesign --verify --strict "$BIN"
+          Tests/Integration/release-binary-launch-smoke.sh "$BIN"
           TARBALL="macvis-${GITHUB_REF_NAME}-macos-arm64.tar.gz"
           mkdir -p dist
           tar -C "$(dirname "$BIN")" -czf "dist/${TARBALL}" "$(basename "$BIN")"
           ( cd dist && shasum -a 256 "${TARBALL}" > "${TARBALL}.sha256" )
 
       - name: Generate release notes
-        run: scripts/gen-release-notes.sh "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/RELEASE_NOTES.md"
+        run: scripts/gen-release-notes.sh "${GITHUB_REF_NAME}" > dist/RELEASE_NOTES.md
 
-      - name: Publish release (core binary)
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: macvis-release-candidate
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  verify-macos-26:
+    name: verify packaged release (macOS 26)
+    needs: build
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: macvis-release-candidate
+          path: dist
+
+      - name: Verify checksum, package, signature, and launch
+        run: |
+          TARBALL="macvis-${GITHUB_REF_NAME}-macos-arm64.tar.gz"
+          ( cd dist && shasum -a 256 -c "${TARBALL}.sha256" )
+          test "$(tar -tzf "dist/${TARBALL}")" = macvis
+          mkdir verify
+          tar -xzf "dist/${TARBALL}" -C verify
+          codesign --verify --strict verify/macvis
+          test "$(verify/macvis --version)" = "macvis ${GITHUB_REF_NAME#v}"
+          Tests/Integration/release-binary-launch-smoke.sh verify/macvis
+
+  publish:
+    name: publish verified release
+    needs: [build, verify-macos-26]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified release candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: macvis-release-candidate
+          path: dist
+
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
           fail_on_unmatched_files: true
-          body_path: ${{ runner.temp }}/RELEASE_NOTES.md
+          body_path: dist/RELEASE_NOTES.md

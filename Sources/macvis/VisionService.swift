@@ -382,16 +382,10 @@ enum VisionService {
         let documentOCRStatus = status(await DocumentOCREngine.documentOCRAvailable())
         let classifyStatus = status(await ClassifyEngine.classifyVisionAvailable())
         let askStatus: YAMLValue
-        #if MACVIS_ASK_IMAGE
         switch probeAskAvailability() {
         case .available: askStatus = .string("available")
         case .ineligible(let r), .osTooOld(let r), .notReady(let r): askStatus = .string("unavailable: \(r)")
         }
-        #else
-        // Built without the multimodal image path: ask can't run regardless of OS — match the
-        // real call (needs_macos_27_sdk) and the MCP tool list (which hides ask on this build).
-        askStatus = .string("unavailable: needs_macos_27_sdk")
-        #endif
         let langs = OCREngine.systemDefaultLanguages().map { YAMLValue.string($0) }
         // Readiness, not capability — empty unless the model is available *now*; when it is,
         // this is what it can currently handle across the languages it supports.

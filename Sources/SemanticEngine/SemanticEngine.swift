@@ -1,7 +1,6 @@
 import Foundation
-// GenerationSchema is @available(macOS 26, *) in the ordinary macOS 26 SDK — independent of
-// the macOS-27-only multimodal image API and the MACVIS_ASK_IMAGE flag (verified against the
-// Xcode 26.4.1 SDK's FoundationModels.swiftinterface; see JSONSchemaMapper's doc comment).
+// GenerationSchema is @available(macOS 26, *) while multimodal image input is guarded at
+// runtime by @available(macOS 27, *) (see JSONSchemaMapper's doc comment).
 // AFMEngine.swift already assumes FoundationModels is always importable for this package —
 // VisionService.swift instantiates `AFMEngine()` completely unguarded — so this protocol can
 // reference the type directly rather than forking the requirement into guarded/unguarded forms.

@@ -85,4 +85,5 @@ back; `label_count: 0` is a valid outcome (not an error), same as `barcode`'s `c
 Full flags for any command live in `macvis <command> --help` (the canonical, code-generated
 reference). To drive it as a tool server instead of the CLI, run `macvis mcp` — same engine,
 exposes `ocr` / `find` / `barcode` / `qr` / `classify` / `make-qr` / `document-bounds` /
-`rectify-document` / `document-ocr` / `doctor` (and `ask` on macOS 27 builds) as MCP tools.
+`rectify-document` / `document-ocr` / `doctor` / `ask` as MCP tools. On macOS 26, `ask`
+returns a structured availability error.

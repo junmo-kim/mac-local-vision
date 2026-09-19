@@ -27,11 +27,11 @@ func printUsage() {
       make-qr <text>               Generate a scannable QR code PNG  (CoreImage only)          [--out PATH] [--correction-level L|M|Q|H] [--size N (px/module)] [--format yaml|json]
       rectify-document <image>     Flatten a photographed document   (Vision detect + CoreImage) [--out PATH] [--min-confidence N] [--page N] [--scale S] [--format yaml|json]
 
-    SEMANTIC COMMAND (Beta — needs macOS 27 (Beta) + an Apple-Intelligence-eligible Mac):
-      ask <image> --prompt P      On-device multimodal reasoning (Beta)  [--stream] [--format yaml|json]
+    SEMANTIC COMMAND (needs macOS 27 + an Apple Intelligence eligible Apple Silicon Mac):
+      ask <image> --prompt P      On-device multimodal reasoning  [--stream] [--format yaml|json]
 
     AGENT INTERFACE:
-      mcp                         MCP server over stdio (JSON-RPC) — ocr/find/barcode/qr/classify/make-qr/document-bounds/rectify-document/document-ocr/doctor tools (+ask on macOS 27 builds)
+      mcp                         MCP server over stdio (JSON-RPC) — ocr/find/barcode/qr/classify/make-qr/document-bounds/rectify-document/document-ocr/doctor/ask tools
       serve [--host H] [--port N] HTTP MCP server for remote nodes — default 0.0.0.0:9090
 
     UTILITY:
