@@ -306,29 +306,41 @@ def main():
     for call in result["calls"]:
         key = f"{call['mode']}/{call['case']}"
         exit_codes.setdefault(key, []).append(call["exit"]["code"])
+    quality_by_mode = {
+        mode: {
+            metric: {
+                "hits": sum(
+                    call["quality"][metric]
+                    for call in result["calls"]
+                    if call["mode"] == mode
+                ),
+                "calls": sum(call["mode"] == mode for call in result["calls"]),
+            }
+            for metric in ("visible_text_exact", "qr_payload_exact")
+        }
+        for mode in sorted({call["mode"] for call in result["calls"]})
+    }
+    vision_tools_quality_passed = True
+    if args.vision_tools_ab:
+        baseline_qr = quality_by_mode["baseline"]["qr_payload_exact"]["hits"]
+        tools_qr = quality_by_mode["vision-tools"]["qr_payload_exact"]["hits"]
+        # This deterministic fixture carries a QR payload that baseline consistently
+        # misses. Requiring a strict improvement catches a disconnected/hardcoded-off
+        # --vision-tools path while leaving free-form answer wording unconstrained.
+        vision_tools_quality_passed = tools_qr >= 1 and tools_qr > baseline_qr
     result["summary"] = {
-        "passed": passed_calls == len(result["calls"]),
+        "passed": passed_calls == len(result["calls"]) and vision_tools_quality_passed,
         "total_calls": len(result["calls"]),
         "passed_calls": passed_calls,
         "exit_codes_by_case": exit_codes,
-        "quality_by_mode": {
-            mode: {
-                metric: {
-                    "hits": sum(
-                        call["quality"][metric]
-                        for call in result["calls"]
-                        if call["mode"] == mode
-                    ),
-                    "calls": sum(call["mode"] == mode for call in result["calls"]),
-                }
-                for metric in ("visible_text_exact", "qr_payload_exact")
-            }
-            for mode in sorted({call["mode"] for call in result["calls"]})
-        },
+        "vision_tools_quality_passed": vision_tools_quality_passed,
+        "quality_by_mode": quality_by_mode,
     }
     write_json_atomic(output, result)
     print(
-        f"ask evaluation: {passed_calls}/{len(result['calls'])} contract checks passed; result: {output}",
+        f"ask evaluation: {passed_calls}/{len(result['calls'])} contract checks passed; "
+        f"vision-tools quality gate={'passed' if vision_tools_quality_passed else 'failed'}; "
+        f"result: {output}",
         flush=True,
     )
     return 0 if result["summary"]["passed"] else 1

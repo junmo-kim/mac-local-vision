@@ -9,6 +9,7 @@ set -euo pipefail
 
 binary=${1:-.build/release/macvis}
 binary=$(cd "$(dirname "$binary")" && pwd)/$(basename "$binary")
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/macvis-release-smoke.XXXXXX")
 pid=""
 
@@ -174,4 +175,6 @@ if ! kill -0 "$pid" 2>/dev/null; then
   exit 1
 fi
 
-echo "release binary smoke test passed: CLI, doctor, QR, MCP, and server launch"
+python3 "$script_dir/segment-download-consent.py" "$binary"
+
+echo "release binary smoke test passed: CLI, doctor, QR, MCP, download consent, and server launch"
