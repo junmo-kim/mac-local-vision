@@ -54,11 +54,17 @@ enum HTTPServer {
         }
         let params = NWParameters.tcp
         params.allowLocalEndpointReuse = true
-        if host != "0.0.0.0" && host != "::" {
-            params.requiredLocalEndpoint = NWEndpoint.hostPort(
+        let listener: NWListener?
+        if host == "0.0.0.0" || host == "::" {
+            listener = try? NWListener(using: params, on: nwPort)
+        } else {
+            // requiredLocalEndpoint already contains the port. Passing `on: nwPort` as
+            // well makes Network.framework reject explicit hosts on macOS 27.
+            params.requiredLocalEndpoint = .hostPort(
                 host: NWEndpoint.Host(host), port: nwPort)
+            listener = try? NWListener(using: params)
         }
-        guard let listener = try? NWListener(using: params, on: nwPort) else {
+        guard let listener else {
             IO.warn("error: could not bind to \(host):\(port) (port may be in use)"); return nil
         }
         return listener
