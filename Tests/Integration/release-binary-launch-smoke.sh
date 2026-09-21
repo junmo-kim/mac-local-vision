@@ -28,14 +28,26 @@ if ! [[ "$version" =~ ^macvis\ [0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 "$binary" --help >/dev/null
 
-doctor_json=$("$binary" doctor --format json)
+doctor_stdout="$tmpdir/doctor.json"
+doctor_stderr="$tmpdir/doctor.stderr"
+if ! "$binary" doctor --format json >"$doctor_stdout" 2>"$doctor_stderr"; then
+  echo "release binary smoke test failed: doctor exited nonzero" >&2
+  cat "$doctor_stderr" >&2
+  exit 1
+fi
+if [ ! -s "$doctor_stdout" ]; then
+  echo "release binary smoke test failed: doctor produced no stdout" >&2
+  cat "$doctor_stderr" >&2
+  exit 1
+fi
 os_major=$(sw_vers -productVersion | cut -d. -f1)
-DOCTOR_JSON="$doctor_json" OS_MAJOR="$os_major" python3 - <<'PY'
+if ! python3 - "$doctor_stdout" "$os_major" <<'PY'
 import json
-import os
+import sys
 
-doctor = json.loads(os.environ["DOCTOR_JSON"])
-os_major = int(os.environ["OS_MAJOR"])
+with open(sys.argv[1], encoding="utf-8") as handle:
+    doctor = json.load(handle)
+os_major = int(sys.argv[2])
 required = {"ocr", "find", "barcode", "classify", "document_bounds", "document_ocr", "segment", "ask"}
 missing = sorted(required - doctor.keys())
 if missing:
@@ -52,19 +64,40 @@ if os_major < 27 and doctor["segment"] != "unavailable: needs_macos_27":
 if not isinstance(doctor.get("ocr_languages"), list) or not isinstance(doctor.get("ask_languages"), list):
     raise SystemExit("doctor language fields must be arrays")
 PY
+then
+  echo "release binary smoke test failed: doctor output failed JSON/contract validation" >&2
+  echo "doctor stdout bytes: $(wc -c <"$doctor_stdout" | tr -d ' ')" >&2
+  sed -n '1,20p' "$doctor_stdout" >&2
+  cat "$doctor_stderr" >&2
+  exit 1
+fi
 
 qr_path="$tmpdir/smoke.png"
 "$binary" make-qr macvis-release-smoke --out "$qr_path" --format json >/dev/null
-qr_json=$("$binary" qr "$qr_path" --format json)
-QR_JSON="$qr_json" python3 - <<'PY'
+qr_stdout="$tmpdir/qr.json"
+qr_stderr="$tmpdir/qr.stderr"
+if ! "$binary" qr "$qr_path" --format json >"$qr_stdout" 2>"$qr_stderr"; then
+  echo "release binary smoke test failed: QR command exited nonzero" >&2
+  cat "$qr_stderr" >&2
+  exit 1
+fi
+if ! QR_OUTPUT="$qr_stdout" python3 - <<'PY'
 import json
 import os
 
-result = json.loads(os.environ["QR_JSON"])
+with open(os.environ["QR_OUTPUT"], encoding="utf-8") as handle:
+    result = json.load(handle)
 payloads = [code.get("payload") for code in result.get("codes", [])]
 if "macvis-release-smoke" not in payloads:
     raise SystemExit(f"QR round trip failed: {payloads!r}")
 PY
+then
+  echo "release binary smoke test failed: QR output failed JSON/contract validation" >&2
+  echo "QR stdout bytes: $(wc -c <"$qr_stdout" | tr -d ' ')" >&2
+  sed -n '1,20p' "$qr_stdout" >&2
+  cat "$qr_stderr" >&2
+  exit 1
+fi
 
 set +e
 "$binary" segment "$qr_path" --point --box 1,1,10,10 >/dev/null 2>"$tmpdir/segment-cli-error"
@@ -75,12 +108,19 @@ if [ "$segment_cli_code" -ne 64 ] || ! grep -q 'invalid --point' "$tmpdir/segmen
   exit 1
 fi
 
-printf '%s\n' \
+mcp_stdout="$tmpdir/mcp.jsonl"
+mcp_stderr="$tmpdir/mcp.stderr"
+if ! printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
   "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"segment\",\"arguments\":{\"path\":\"$qr_path\",\"point\":[true,false],\"format\":\"json\"}}}" \
-  | "$binary" mcp > "$tmpdir/mcp.jsonl"
-MCP_OUTPUT="$tmpdir/mcp.jsonl" python3 - <<'PY'
+  '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"doctor","arguments":{"format":"json"}}}' \
+  | "$binary" mcp >"$mcp_stdout" 2>"$mcp_stderr"; then
+  echo "release binary smoke test failed: MCP server exited nonzero" >&2
+  cat "$mcp_stderr" >&2
+  exit 1
+fi
+if ! MCP_OUTPUT="$mcp_stdout" python3 - <<'PY'
 import json
 import os
 
@@ -100,7 +140,20 @@ content = segment["result"]["content"][0]["text"]
 error = json.loads(content)
 if (error.get("error"), error.get("reason")) != ("bad_request", "invalid_seed"):
     raise SystemExit(f"MCP boolean segment seed returned the wrong error: {error!r}")
+doctor_response = next((item for item in responses if item.get("id") == 4), None)
+if doctor_response is None or doctor_response.get("result", {}).get("isError"):
+    raise SystemExit("MCP doctor response is missing or failed")
+doctor = json.loads(doctor_response["result"]["content"][0]["text"])
+if not {"ocr", "classify", "segment", "ask"}.issubset(doctor):
+    raise SystemExit(f"MCP doctor response is incomplete: {doctor!r}")
 PY
+then
+  echo "release binary smoke test failed: MCP output failed JSON/contract validation" >&2
+  echo "MCP stdout bytes: $(wc -c <"$mcp_stdout" | tr -d ' ')" >&2
+  sed -n '1,20p' "$mcp_stdout" >&2
+  cat "$mcp_stderr" >&2
+  exit 1
+fi
 
 port=$(python3 - <<'PY'
 import socket

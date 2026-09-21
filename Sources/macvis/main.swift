@@ -43,7 +43,7 @@ func printUsage() {
     Output is YAML by default; data on stdout, errors on stderr.
     https://github.com/junmo-kim/mac-local-vision
     """
-    print(usage)
+    IO.emitText(usage + "\n")
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
@@ -72,7 +72,7 @@ func dispatch(_ args: [String]) async -> Int32 {
         case "mcp":                    return await MCPCommand.run(rest)
         case "serve":                  return await ServeCommand.run(rest)
         case "help", "-h", "--help":   printUsage(); return ExitCode.success.rawValue
-        case "version", "--version":   print("macvis \(version)"); return ExitCode.success.rawValue
+        case "version", "--version":   IO.emitText("macvis \(version)\n"); return ExitCode.success.rawValue
         default:
             IO.warn("error: unknown command '\(sub)' (try: macvis --help)")
             return ExitCode.usage.rawValue
@@ -86,5 +86,10 @@ func dispatch(_ args: [String]) async -> Int32 {
     }
 }
 
-let code = await dispatch(arguments)
+guard let code = await IO.withProcessDataOutputBoundary({
+    await dispatch(arguments)
+}) else {
+    IO.warn("error: could not reserve stdout for structured output")
+    exit(ExitCode.runtimeError.rawValue)
+}
 exit(code)
