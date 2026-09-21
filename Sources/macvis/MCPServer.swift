@@ -9,17 +9,19 @@ import VisionCore
 /// Transport rule: stdout carries ONLY JSON-RPC messages. Never call IO.emit here.
 enum MCPServer {
     static func run() async -> Int32 {
+        let dataOutput = IO.dataOutputFileDescriptor
         while let line = readLine(strippingNewline: true) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty { continue }
             guard let data = trimmed.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 write(["jsonrpc": "2.0", "id": NSNull(),
-                       "error": ["code": -32700, "message": "Parse error"]])
+                       "error": ["code": -32700, "message": "Parse error"]],
+                      to: dataOutput)
                 continue
             }
             if let response = await computeResponse(for: obj) {
-                write(response)
+                write(response, to: dataOutput)
             }
         }
         return ExitCode.success.rawValue
@@ -113,10 +115,11 @@ enum MCPServer {
 
     // MARK: - stdio write
 
-    private static func write(_ msg: [String: Any]) {
+    private static func write(_ msg: [String: Any], to fileDescriptor: Int32) {
         guard let data = try? JSONSerialization.data(withJSONObject: msg, options: [.withoutEscapingSlashes]) else { return }
-        FileHandle.standardOutput.write(data)
-        FileHandle.standardOutput.write(Data([0x0a]))
+        let output = FileHandle(fileDescriptor: fileDescriptor, closeOnDealloc: false)
+        output.write(data)
+        output.write(Data([0x0a]))
     }
 }
 

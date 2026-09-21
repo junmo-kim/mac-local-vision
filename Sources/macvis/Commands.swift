@@ -3,7 +3,10 @@ import VisionCore
 import SemanticEngine
 
 /// Run a request through the shared service and emit it (stdout=data, stderr=error).
-func runService(_ req: VisionRequest, format: OutputFormat) async -> Int32 {
+func runService(
+    _ req: VisionRequest,
+    format: OutputFormat
+) async -> Int32 {
     do {
         let result = try await VisionService.handle(req)
         IO.emit(result.value, format: format)
@@ -19,7 +22,7 @@ func runService(_ req: VisionRequest, format: OutputFormat) async -> Int32 {
 
 /// Print a command's usage to stdout and exit 0 — answers `macvis <command> --help`.
 private func helpExit(_ command: String) -> Int32 {
-    print(CLIHelp.usage(for: command) ?? "usage: macvis \(command)")
+    IO.emitText((CLIHelp.usage(for: command) ?? "usage: macvis \(command)") + "\n")
     return ExitCode.success.rawValue
 }
 
@@ -342,7 +345,7 @@ enum MCPCommand {
 enum ServeCommand {
     static func run(_ args: [String]) async -> Int32 {
         if CLIHelp.wantsHelp(args) {
-            print(CLIHelp.usage(for: "serve") ?? "usage: macvis serve [--host H] [--port N]")
+            IO.emitText((CLIHelp.usage(for: "serve") ?? "usage: macvis serve [--host H] [--port N]") + "\n")
             return ExitCode.success.rawValue
         }
         let parsed = ArgParser.parse(args)
