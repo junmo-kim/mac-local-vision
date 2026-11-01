@@ -488,13 +488,15 @@ enum MCPTools {
             returns a structured availability error (check `error`/`reason`). Use `ocr`/`find` \
             for plain text or pixel targeting — use `ask` when you need interpretation \
             (describe this UI, what's the error, which button is primary, summarize this page). \
-            Requires local filesystem access via `path` — remote HTTP callers cannot pass images \
-            in-memory for this tool; use `ocr`/`find` with `data` instead.
+            Remote callers (non-Mac nodes): send the image as base64 in the `data` field instead of `path`, or use HTTP method \
+            QUERY (RFC 10008) — e.g. curl -X QUERY "http://host:9090/ask?prompt=What%20does%20this%20error%20say%3F&format=json" \
+            --data-binary @shot.png where the body is raw file bytes and options go in the query string.
             """,
             "inputSchema": [
                 "type": "object",
                 "properties": [
-                    "path": ["type": "string", "description": "Path to an image (png/jpg/heic/...) or a PDF."],
+                    "path": ["type": "string", "description": "Path to an image (png/jpg/heic/tiff/...) or a PDF. Required if `data` is not provided."],
+                    "data": ["type": "string", "description": "Base64-encoded image or PDF for remote (non-Mac) callers. Required if `path` is not provided. Takes precedence over `path` when both are supplied."],
                     "prompt": ["type": "string", "description": "The question to ask about the image."],
                     "visionTools": [
                         "type": "boolean",
@@ -514,7 +516,7 @@ enum MCPTools {
                     "scale": ["type": "number", "description": "PDF rasterization scale (2.0 ≈ 144 dpi). Default 2.0."],
                     "format": ["type": "string", "enum": ["yaml", "json"], "description": "Output format. Default yaml."],
                 ],
-                "required": ["path", "prompt"],
+                "required": ["prompt"],
             ],
         ]
     }
@@ -537,7 +539,8 @@ enum MCPTools {
                 page: int(args["page"]), scale: number(args["scale"]))
         case "ask":
             return VisionRequest(
-                op: "ask", path: args["path"] as? String, prompt: args["prompt"] as? String,
+                op: "ask", path: args["path"] as? String, data: args["data"] as? String,
+                prompt: args["prompt"] as? String,
                 visionTools: args["visionTools"] as? Bool,
                 page: int(args["page"]), scale: number(args["scale"]),
                 schema: jsonString(args["schema"]))

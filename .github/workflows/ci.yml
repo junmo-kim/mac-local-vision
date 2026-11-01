@@ -40,6 +40,9 @@ jobs:
       - name: HTTP listener lifecycle test
         run: Tests/Integration/serve-lifecycle.sh .build/release/macvis
 
+      - name: ask data input contract
+        run: Tests/Integration/ask-data-input.sh .build/release/macvis
+
       - name: Upload canonical release binary
         uses: actions/upload-artifact@v4
         with:

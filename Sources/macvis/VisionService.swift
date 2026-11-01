@@ -510,7 +510,7 @@ enum VisionService {
     // MARK: - ask
 
     static func ask(_ req: VisionRequest) async throws -> ServiceResult {
-        let path = try requirePath(req)
+        let input = try InputSource.resolve(path: req.path, data: req.data)
         guard let prompt = req.prompt, !prompt.isEmpty else {
             throw ServiceError(name: "bad_request", reason: "missing_prompt",
                                hint: "ask requires a natural-language prompt", exitCode: ExitCode.usage.rawValue)
@@ -525,7 +525,7 @@ enum VisionService {
             schema = nil
         }
         do {
-            let outcome = try await AFMEngine().ask(input: .path(path), prompt: prompt,
+            let outcome = try await AFMEngine().ask(input: input, prompt: prompt,
                                                     stream: req.stream ?? false,
                                                     visionTools: req.visionTools ?? false,
                                                     page: req.page ?? 1, scale: req.scale ?? 2.0,
@@ -555,14 +555,6 @@ enum VisionService {
     }
 
     // MARK: - helpers
-
-    private static func requirePath(_ req: VisionRequest) throws -> String {
-        guard let p = req.path, !p.isEmpty else {
-            throw ServiceError(name: "bad_request", reason: "missing_path",
-                               hint: "provide an image or PDF path", exitCode: ExitCode.usage.rawValue)
-        }
-        return p
-    }
 
     private static func boxFields(_ rect: NormalizedRect, _ w: Int, _ h: Int) -> [(String, YAMLValue)] {
         let px = Geometry.toPixelRect(rect, imageWidth: w, imageHeight: h)

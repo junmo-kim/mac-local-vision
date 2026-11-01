@@ -459,8 +459,10 @@ Configure remote nodes to use `type: http` with the Mac's LAN address:
 { "mcpServers": { "macvis": { "type": "http", "url": "http://192.168.x.y:9090/mcp" } } }
 ```
 
-Remote callers pass images as base64 in the `data` field instead of `path`. There is no built-in
-authentication — treat this as a filesystem read service on your LAN and secure accordingly.
+Remote callers pass images as base64 in the `data` field instead of `path`. Every image tool,
+including `ask`, also accepts raw bytes over HTTP `QUERY` — e.g.
+`curl -X QUERY "http://192.168.x.y:9090/ask?prompt=Describe%20this&format=json" --data-binary @shot.png`.
+There is no built-in authentication — treat this as a filesystem read service on your LAN and secure accordingly.
 
 **Claude Code skill** — this repo ships one in [`skills/macvis/`](skills/macvis/SKILL.md).
 Symlink it into your skills directory:
