@@ -15,8 +15,9 @@ enum VisionService {
 
     static func handle(_ req: VisionRequest) async throws -> ServiceResult {
         let meta = pdfPageMeta(for: req)
+        if let meta, !meta.isInRange { throw meta.outOfRangeError() }
         let result = try await dispatch(req)
-        if let meta, meta.isInRange { return meta.annotate(result) }
+        if let meta { return meta.annotate(result) }
         return result
     }
 

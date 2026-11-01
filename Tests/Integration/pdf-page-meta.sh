@@ -102,4 +102,24 @@ if [[ -s "$tmp/stderr" ]]; then
 fi
 echo "ok   P5 raster input writes nothing to stderr"
 
+# --- out-of-range pages ----------------------------------------------------------------
+
+set +e
+"$binary" ocr "$tmp/fixture.pdf" --page 4 --format json >/dev/null 2>"$tmp/stderr"
+code=$?
+set -e
+[[ "$code" == 64 ]] || { echo "FAIL R1 CLI ocr --page 4: expected exit 64, got $code: $(cat "$tmp/stderr")" >&2; exit 1; }
+expect_json "R1 CLI ocr --page 4 -> page_out_of_range naming the page count" "$(cat "$tmp/stderr")" \
+  'd.get("reason") == "page_out_of_range" and "3 page" in d.get("detail", "")'
+
+status=$(query_tool 'barcode?page=0&format=json' "$tmp/fixture.pdf")
+expect_status "R2 QUERY barcode page 0" "$status" 400
+expect_json "R2 QUERY barcode page 0 -> page_out_of_range" "$(cat "$tmp/out")" 'd.get("reason") == "page_out_of_range"'
+
+out=$(mcp_call ask "{\"data\":\"$pdf_b64\",\"prompt\":\"x\",\"page\":9,\"format\":\"json\"}")
+expect_json "R3 MCP ask PDF page 9 -> page_out_of_range before any model call" "$out" 'd.get("reason") == "page_out_of_range"'
+
+out=$("$binary" ocr "$tmp/fixture.png" --page 5 --format json)
+expect_json "R4 CLI ocr raster ignores page as before" "$out" '"page" not in d and "text" in d'
+
 echo "PDF page metadata contract: all checks passed"

@@ -77,7 +77,7 @@ macvis sort-faces ./photos --output-dir ./by-person  # cluster a folder of photo
 - **`find`:** always check `found` — it's `false` (with exit 1) when the target isn't on
   screen. `x,y` is the click center; `approximate: true` means the box is the whole text line,
   not word-tight.
-- **PDF input:** output starts with `page` and `page_count`. A PDF without `--page` means page 1 only — read every page with `--page 1` … `--page <page_count>`.
+- **PDF input:** output starts with `page` and `page_count`. A PDF without `--page` means page 1 only — read every page with `--page 1` … `--page <page_count>`. An out-of-range page fails with `page_out_of_range` (exit 64).
 - Recognition languages auto-detect from the system locale; override with `--lang ko-KR,en-US`.
 - `find` filters at `--min-confidence 0.3` by default (`ocr` keeps everything); lower it for blurry/headless renders.
 - `segment` never downloads model assets implicitly. If it returns

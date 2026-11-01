@@ -211,7 +211,7 @@ Output is YAML by default (`--format json` for `jq`). Data goes to stdout; logs 
 structured errors go to stderr. Exit codes distinguish bad args (`64`), permanent `ask`
 ineligibility (`70`), and retryable failures (`71`).
 
-For PDF input, every image tool's output starts with `page` (the page processed) and `page_count`.
+For PDF input, every image tool's output starts with `page` (the page processed) and `page_count`. An out-of-range `page` fails with `bad_request`/`page_out_of_range` and reports the page count.
 
 ### Sample output
 
