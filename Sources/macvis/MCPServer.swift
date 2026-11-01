@@ -636,6 +636,8 @@ enum MCPTools {
     /// back into JSON text, so it funnels through the same `VisionRequest.schema: String?`
     /// wire field / `JSONSchemaMapper` path the CLI uses (one mapping code path either way).
     private static func jsonString(_ v: Any?) -> String? {
+        // QUERY passes schema as a JSON string; JSONSchemaMapper validates it.
+        if let s = v as? String { return s.isEmpty ? nil : s }
         guard let dict = v as? [String: Any],
               let data = try? JSONSerialization.data(withJSONObject: dict) else {
             return nil

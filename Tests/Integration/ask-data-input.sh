@@ -105,6 +105,12 @@ status=$(query_ask 10 'format=json' "$tmp/fixture.png")
 expect_status "M4 QUERY raw bytes without prompt" "$status" 400
 expect_json "M4 QUERY raw bytes without prompt -> missing_prompt" "$(cat "$tmp/out")" 'd.get("reason") == "missing_prompt"'
 
+# QUERY carries `schema` as a JSON string; an unsupported type must be rejected before any
+# model call (so this is deterministic even where ask is unavailable).
+status=$(query_ask 10 'prompt=x&schema=%7B%22type%22%3A%22nope%22%7D&format=json' "$tmp/fixture.png")
+expect_status "M5 QUERY schema string is validated" "$status" 400
+expect_json "M5 QUERY schema string is validated -> invalid_schema" "$(cat "$tmp/out")" 'd.get("reason") == "invalid_schema"'
+
 # --- live-model checks -----------------------------------------------------------------
 
 ask_state=$("$binary" doctor --format json | python3 -I -c 'import json,sys; print(json.load(sys.stdin).get("ask",""))')
@@ -126,5 +132,11 @@ expect_json "L2 MCP base64 JPEG data -> on-device answer" "$out" "$answered"
 status=$(query_ask 120 "path=$tmp/fixture.png&prompt=$prompt&format=json")
 expect_status "L3 QUERY path (regression)" "$status" 200
 expect_json "L3 QUERY path (regression) -> on-device answer" "$(cat "$tmp/out")" "$answered"
+
+schema=$(python3 -I -c 'import urllib.parse; print(urllib.parse.quote("{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"]}", safe=""))')
+status=$(query_ask 120 "prompt=$prompt&schema=$schema&format=json" "$tmp/fixture.png")
+expect_status "L4 QUERY schema string" "$status" 200
+expect_json "L4 QUERY schema string -> structured answer" "$(cat "$tmp/out")" \
+  'isinstance(d.get("answer"), dict) and "text" in d["answer"]'
 
 echo "ask data input contract: all checks passed"
