@@ -525,7 +525,7 @@ enum VisionService {
             schema = nil
         }
         do {
-            let outcome = try await AFMEngine().ask(imagePath: path, prompt: prompt,
+            let outcome = try await AFMEngine().ask(input: .path(path), prompt: prompt,
                                                     stream: req.stream ?? false,
                                                     visionTools: req.visionTools ?? false,
                                                     page: req.page ?? 1, scale: req.scale ?? 2.0,

@@ -1,12 +1,14 @@
+import Foundation
 import Testing
 @testable import SemanticEngine
+import VisionCore
 
 @Suite("SemanticEngine — ask plumbing (no model)")
 struct AskPlumbingTests {
     @Test("MockEngine returns its stub answer as an AskOutcome")
     func mockFlow() async throws {
         let out = try await MockEngine(response: "stub answer")
-            .ask(imagePath: "/x.png", prompt: "q", stream: false, visionTools: false,
+            .ask(input: .path("/x.png"), prompt: "q", stream: false, visionTools: false,
                  page: 1, scale: 2.0, schema: nil)
         #expect(out.text == "stub answer")
         #expect(out.compute == .onDevice)
@@ -15,9 +17,18 @@ struct AskPlumbingTests {
     @Test("MockEngine accepts the opt-in Vision tools path without changing the outcome contract")
     func mockVisionToolsFlow() async throws {
         let out = try await MockEngine(response: "tool-stub")
-            .ask(imagePath: "/x.png", prompt: "read", stream: false, visionTools: true,
+            .ask(input: .path("/x.png"), prompt: "read", stream: false, visionTools: true,
                  page: 1, scale: 2.0, schema: nil)
         #expect(out.text == "tool-stub")
+        #expect(out.compute == .onDevice)
+    }
+
+    @Test("MockEngine accepts in-memory data input with the same outcome contract")
+    func mockDataInputFlow() async throws {
+        let out = try await MockEngine(response: "data-stub")
+            .ask(input: .data(Data([0x89, 0x50])), prompt: "q", stream: false, visionTools: false,
+                 page: 1, scale: 2.0, schema: nil)
+        #expect(out.text == "data-stub")
         #expect(out.compute == .onDevice)
     }
 

@@ -5,6 +5,7 @@ import Foundation
 // VisionService.swift instantiates `AFMEngine()` completely unguarded — so this protocol can
 // reference the type directly rather than forking the requirement into guarded/unguarded forms.
 import FoundationModels
+import VisionCore  // InputSource — same path/data input contract as the other image tools
 
 /// Where an `ask` ran. macvis runs purely on-device, so this is always `on-device`
 /// (nothing leaves the machine). Apple's Private Cloud Compute backend exists but is
@@ -36,7 +37,7 @@ public protocol SemanticEngine: Sendable {
     /// the crash-defense ordering: the pre-flight availability gate runs identically either
     /// way, before any real model call). Building `schema` from a caller-supplied JSON Schema
     /// is `JSONSchemaMapper.map`'s job, kept fully outside this call.
-    func ask(imagePath: String, prompt: String, stream: Bool, visionTools: Bool,
+    func ask(input: InputSource, prompt: String, stream: Bool, visionTools: Bool,
              page: Int, scale: Double, schema: GenerationSchema?) async throws -> AskOutcome
 }
 

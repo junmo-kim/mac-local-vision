@@ -36,7 +36,7 @@ enum AskSessionPlan: Equatable {
 public struct AFMEngine: SemanticEngine {
     public init() {}
 
-    public func ask(imagePath: String, prompt: String, stream: Bool, visionTools: Bool,
+    public func ask(input: InputSource, prompt: String, stream: Bool, visionTools: Bool,
                     page: Int, scale: Double, schema: GenerationSchema?) async throws -> AskOutcome {
         // Originally this let the framework's thrown error decide eligibility, without
         // pre-judging from the availability probe. On an early macOS 27 build that
@@ -60,11 +60,14 @@ public struct AFMEngine: SemanticEngine {
         // accepts a CGImage directly (verified against the 27 SDK).
         let image: CGImage
         do {
-            image = try OCREngine.loadImage(path: imagePath, page: page, scale: scale).cgImage
+            switch input {
+            case .path(let p): image = try OCREngine.loadImage(path: p, page: page, scale: scale).cgImage
+            case .data(let d): image = try OCREngine.loadImage(data: d, page: page, scale: scale).cgImage
+            }
         } catch {
             throw SemanticError.failed(
-                reason: "image_load_failed", detail: imagePath,
-                hint: "check the path / format (png/jpg/heic/pdf — use page for multi-page PDFs).")
+                reason: "image_load_failed", detail: input.label,
+                hint: "check the path / data / format (png/jpg/heic/pdf — use page for multi-page PDFs).")
         }
         // Gated as late as possible — right before the crash-prone call, after image
         // loading — to keep the check-to-call window (and thus the chance the model flips
