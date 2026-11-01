@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.0
+
+`ask` now takes images the same way as every other tool: base64 `data` over MCP or raw bytes over HTTP `QUERY`, so remote callers no longer need a path on the Mac. A request with neither reports `missing_input` instead of `missing_path`. PDF input reports `page` and `page_count` in every image tool's output, and an out-of-range page fails with `page_out_of_range` instead of `image_load_failed`.
+
 ## v0.5.0
 
 `macvis` now ships a single Xcode 27 build: core commands run on macOS 26, while multimodal `ask` and the new point/box `segment` command require macOS 27. Model errors include step-by-step recovery guidance, and `ask --vision-tools` optionally adds on-device OCR and barcode tools.
