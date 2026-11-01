@@ -43,6 +43,9 @@ jobs:
       - name: ask data input contract
         run: Tests/Integration/ask-data-input.sh .build/release/macvis
 
+      - name: PDF page metadata contract
+        run: Tests/Integration/pdf-page-meta.sh .build/release/macvis
+
       - name: Upload canonical release binary
         uses: actions/upload-artifact@v4
         with:

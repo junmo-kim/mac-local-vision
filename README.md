@@ -211,6 +211,8 @@ Output is YAML by default (`--format json` for `jq`). Data goes to stdout; logs 
 structured errors go to stderr. Exit codes distinguish bad args (`64`), permanent `ask`
 ineligibility (`70`), and retryable failures (`71`).
 
+For PDF input, every image tool's output starts with `page` (the page processed) and `page_count`.
+
 ### Sample output
 
 `find` returns the exact click point (`x`,`y` = center) plus the bounding box:

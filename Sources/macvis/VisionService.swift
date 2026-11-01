@@ -6,7 +6,35 @@ import FoundationModels  // GenerationSchema — see SemanticEngine.swift's impo
 /// The single engine seam. CLI commands and the MCP server both go through here, so
 /// output is identical across interfaces.
 enum VisionService {
+    /// Ops that take an image or PDF input. A new image op must be listed here to report
+    /// PDF page metadata; ops outside this set keep their own error order.
+    private static let imageOps: Set<String> = [
+        "ocr", "find", "ask", "segment", "barcode", "qr",
+        "document-bounds", "rectify-document", "document-ocr", "classify",
+    ]
+
     static func handle(_ req: VisionRequest) async throws -> ServiceResult {
+        let meta = pdfPageMeta(for: req)
+        let result = try await dispatch(req)
+        if let meta, meta.isInRange { return meta.annotate(result) }
+        return result
+    }
+
+    /// nil unless `req` is an image op whose input resolves to a PDF. Resolution errors are
+    /// left to the op itself, so they keep the same error and order as before.
+    private static func pdfPageMeta(for req: VisionRequest) -> PDFPageMeta? {
+        guard imageOps.contains(req.op),
+              let input = try? InputSource.resolve(path: req.path, data: req.data) else { return nil }
+        let count: Int?
+        switch input {
+        case .path(let p): count = OCREngine.pdfPageCount(path: p)
+        case .data(let d): count = OCREngine.pdfPageCount(data: d)
+        }
+        guard let count else { return nil }
+        return PDFPageMeta(page: req.page ?? 1, pageCount: count)
+    }
+
+    private static func dispatch(_ req: VisionRequest) async throws -> ServiceResult {
         switch req.op {
         case "ocr":    return try await ocr(req)
         case "find":   return try await find(req)
