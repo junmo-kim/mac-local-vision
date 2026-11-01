@@ -151,6 +151,7 @@ public enum OCREngine {
         // Bound the decode: a crafted header claiming huge dimensions would otherwise drive an
         // unbounded decode/allocation. Per-dim guards keep `pw * ph` from overflowing Int.
         // Negative dimensions are theoretically possible from malformed network-sourced images.
+        // Keep in sync with `isAcceptedRaster`, which pdfPageCount uses to agree with this order.
         guard pw > 0, ph > 0, pw <= maxRasterPixels, ph <= maxRasterPixels,
               pw * ph <= maxRasterPixels else { return nil }
         let orientation = (props?[kCGImagePropertyOrientation] as? Int) ?? 1
@@ -211,6 +212,47 @@ public enum OCREngine {
         return ctx.makeImage()
     }
 
+    // MARK: - PDF page count
+
+    /// Number of pages if `loadImage(path:)` would rasterize `path` as a PDF, otherwise nil.
+    public static func pdfPageCount(path: String) -> Int? {
+        let url = URL(fileURLWithPath: path)
+        if let source = CGImageSourceCreateWithURL(url as CFURL, nil), isAcceptedRaster(source) {
+            return nil
+        }
+        guard let bytes = try? Data(contentsOf: url, options: .alwaysMapped),
+              containsPDFHeader(bytes),
+              let doc = CGPDFDocument(url as CFURL) else { return nil }
+        return doc.numberOfPages >= 1 ? doc.numberOfPages : nil
+    }
+
+    /// Number of pages if `loadImage(data:)` would rasterize `data` as a PDF, otherwise nil.
+    public static func pdfPageCount(data: Data) -> Int? {
+        if let source = CGImageSourceCreateWithData(data as CFData, nil), isAcceptedRaster(source) {
+            return nil
+        }
+        guard containsPDFHeader(data),
+              let provider = CGDataProvider(data: data as CFData),
+              let doc = CGPDFDocument(provider) else { return nil }
+        return doc.numberOfPages >= 1 ? doc.numberOfPages : nil
+    }
+
+    /// The same acceptance test `loadOriented` applies before decoding, so raster-first means
+    /// the same thing here as in the loader (a PNG that also embeds a PDF stays a raster).
+    static func isAcceptedRaster(_ source: CGImageSource) -> Bool {
+        let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let pw = (props?[kCGImagePropertyPixelWidth] as? Int) ?? 0
+        let ph = (props?[kCGImagePropertyPixelHeight] as? Int) ?? 0
+        return pw > 0 && ph > 0 && pw <= maxRasterPixels && ph <= maxRasterPixels
+            && pw * ph <= maxRasterPixels
+    }
+
+    /// Checked before `CGPDFDocument`, which logs a CoreGraphics error to stderr for every
+    /// non-PDF input it opens. CoreGraphics accepts the header at any offset, so search it all.
+    static func containsPDFHeader(_ bytes: Data) -> Bool {
+        bytes.range(of: Data("%PDF-".utf8)) != nil
+    }
+
     // MARK: - Image loading (data — for remote/HTTP callers)
 
     public static func loadImage(data: Data, page: Int = 1, scale: Double = 2.0) throws -> (cgImage: CGImage, width: Int, height: Int) {
@@ -228,6 +270,7 @@ public enum OCREngine {
         let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
         let pw = (props?[kCGImagePropertyPixelWidth] as? Int) ?? 0
         let ph = (props?[kCGImagePropertyPixelHeight] as? Int) ?? 0
+        // Keep in sync with `isAcceptedRaster`, which pdfPageCount uses to agree with this order.
         guard pw > 0, ph > 0, pw <= maxRasterPixels, ph <= maxRasterPixels,
               pw * ph <= maxRasterPixels else { return nil }
         let orientation = (props?[kCGImagePropertyOrientation] as? Int) ?? 1

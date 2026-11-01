@@ -363,6 +363,34 @@ public enum InputSource: Sendable {
     }
 }
 
+/// The PDF page an image tool processes, and how many pages the PDF has. Lets every tool
+/// tell the caller which page it read (a PDF without `page` silently means page 1).
+public struct PDFPageMeta: Sendable, Equatable {
+    public let page: Int
+    public let pageCount: Int
+
+    public init(page: Int, pageCount: Int) {
+        self.page = page; self.pageCount = pageCount
+    }
+
+    public var isInRange: Bool { page >= 1 && page <= pageCount }
+
+    /// Prepends `page` and `page_count` to a dict result; other values pass through.
+    public func annotate(_ result: ServiceResult) -> ServiceResult {
+        guard case .dict(let fields) = result.value else { return result }
+        var out = result
+        out.value = .dict([("page", .int(page)), ("page_count", .int(pageCount))] + fields)
+        return out
+    }
+
+    public func outOfRangeError() -> ServiceError {
+        ServiceError(name: "bad_request", reason: "page_out_of_range",
+                     detail: "page \(page) requested; this PDF has \(pageCount) page(s)",
+                     hint: "use a page from 1 to \(pageCount)",
+                     exitCode: ExitCode.usage.rawValue)
+    }
+}
+
 /// A successful service result plus the exit code to surface (0, or 1 for find-not-found).
 public struct ServiceResult: Sendable {
     public var value: YAMLValue
