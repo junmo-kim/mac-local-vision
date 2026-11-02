@@ -78,29 +78,36 @@ expect_status() {
 
 pdf_b64=$(base64 -i "$tmp/fixture.pdf")
 
-out=$("$binary" ocr "$tmp/fixture.pdf" --format json)
-expect_json "P1 CLI ocr PDF defaults to page 1 and reports page_count first" "$out" \
-  'keys[:2] == ["page", "page_count"] and d["page"] == 1 and d["page_count"] == 3 and "PAGE ONE" in d["text"]'
+# Checks that run a real Vision request are skipped on CI, like the Vision fixture suites:
+# Vision needs a real session and fails or hangs on headless runners. The out-of-range
+# checks below are rejected before any Vision call, so they run everywhere.
+if [[ -n "${CI:-}" ]]; then
+  echo "skip: P1-P5 and R4 need a real Vision session (CI)"
+else
+  out=$("$binary" ocr "$tmp/fixture.pdf" --format json)
+  expect_json "P1 CLI ocr PDF defaults to page 1 and reports page_count first" "$out" \
+    'keys[:2] == ["page", "page_count"] and d["page"] == 1 and d["page_count"] == 3 and "PAGE ONE" in d["text"]'
 
-out=$("$binary" ocr "$tmp/fixture.pdf" --page 2 --format json)
-expect_json "P2 CLI ocr --page 2 reports the processed page" "$out" \
-  'd["page"] == 2 and d["page_count"] == 3 and "PAGE TWO" in d["text"]'
+  out=$("$binary" ocr "$tmp/fixture.pdf" --page 2 --format json)
+  expect_json "P2 CLI ocr --page 2 reports the processed page" "$out" \
+    'd["page"] == 2 and d["page_count"] == 3 and "PAGE TWO" in d["text"]'
 
-status=$(query_tool 'document-ocr?page=3&format=json' "$tmp/fixture.pdf")
-expect_status "P3 QUERY document-ocr page 3" "$status" 200
-expect_json "P3 QUERY document-ocr page 3 -> page meta" "$(cat "$tmp/out")" \
-  'd["page"] == 3 and d["page_count"] == 3'
+  status=$(query_tool 'document-ocr?page=3&format=json' "$tmp/fixture.pdf")
+  expect_status "P3 QUERY document-ocr page 3" "$status" 200
+  expect_json "P3 QUERY document-ocr page 3 -> page meta" "$(cat "$tmp/out")" \
+    'd["page"] == 3 and d["page_count"] == 3'
 
-out=$(mcp_call classify "{\"data\":\"$pdf_b64\",\"format\":\"json\"}")
-expect_json "P4 MCP classify PDF data -> page meta" "$out" 'd["page"] == 1 and d["page_count"] == 3'
+  out=$(mcp_call classify "{\"data\":\"$pdf_b64\",\"format\":\"json\"}")
+  expect_json "P4 MCP classify PDF data -> page meta" "$out" 'd["page"] == 1 and d["page_count"] == 3'
 
-out=$("$binary" ocr "$tmp/fixture.png" --format json 2>"$tmp/stderr")
-expect_json "P5 CLI ocr raster output has no page keys" "$out" '"page" not in d and "page_count" not in d'
-if [[ -s "$tmp/stderr" ]]; then
-  echo "FAIL P5 raster input must not write diagnostics to stderr: $(cat "$tmp/stderr")" >&2
-  exit 1
+  out=$("$binary" ocr "$tmp/fixture.png" --format json 2>"$tmp/stderr")
+  expect_json "P5 CLI ocr raster output has no page keys" "$out" '"page" not in d and "page_count" not in d'
+  if [[ -s "$tmp/stderr" ]]; then
+    echo "FAIL P5 raster input must not write diagnostics to stderr: $(cat "$tmp/stderr")" >&2
+    exit 1
+  fi
+  echo "ok   P5 raster input writes nothing to stderr"
 fi
-echo "ok   P5 raster input writes nothing to stderr"
 
 # --- out-of-range pages ----------------------------------------------------------------
 
@@ -119,7 +126,9 @@ expect_json "R2 QUERY barcode page 0 -> page_out_of_range" "$(cat "$tmp/out")" '
 out=$(mcp_call ask "{\"data\":\"$pdf_b64\",\"prompt\":\"x\",\"page\":9,\"format\":\"json\"}")
 expect_json "R3 MCP ask PDF page 9 -> page_out_of_range before any model call" "$out" 'd.get("reason") == "page_out_of_range"'
 
-out=$("$binary" ocr "$tmp/fixture.png" --page 5 --format json)
-expect_json "R4 CLI ocr raster ignores page as before" "$out" '"page" not in d and "text" in d'
+if [[ -z "${CI:-}" ]]; then
+  out=$("$binary" ocr "$tmp/fixture.png" --page 5 --format json)
+  expect_json "R4 CLI ocr raster ignores page as before" "$out" '"page" not in d and "text" in d'
+fi
 
 echo "PDF page metadata contract: all checks passed"
